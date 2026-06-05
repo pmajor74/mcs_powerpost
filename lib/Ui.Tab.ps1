@@ -1,0 +1,233 @@
+# Ui.Tab.ps1 — build one request tab (editor + response), sync it to the model, send.
+
+$script:PPBodyTypeToText = @{ none = 'No body'; json = 'JSON'; text = 'Text'; form = 'Form URL-encoded' }
+$script:PPBodyTextToType = @{ 'No body' = 'none'; 'JSON' = 'json'; 'Text' = 'text'; 'Form URL-encoded' = 'form' }
+$script:PPMethods = @('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')
+
+function New-PPReadGrid {
+    param([string]$Col1 = 'Key', [string]$Col2 = 'Value')
+    $g = New-Object System.Windows.Forms.DataGridView
+    $g.Dock = 'Fill'; $g.ReadOnly = $true; $g.AllowUserToAddRows = $false
+    $g.RowHeadersVisible = $false; $g.AutoSizeColumnsMode = 'Fill'
+    $g.SelectionMode = 'FullRowSelect'; $g.BackgroundColor = [System.Drawing.SystemColors]::Window
+    $c1 = New-Object System.Windows.Forms.DataGridViewTextBoxColumn; $c1.HeaderText = $Col1; $c1.FillWeight = 35
+    $c2 = New-Object System.Windows.Forms.DataGridViewTextBoxColumn; $c2.HeaderText = $Col2; $c2.FillWeight = 65
+    [void]$g.Columns.Add($c1); [void]$g.Columns.Add($c2)
+    return $g
+}
+
+function New-PPMultiline {
+    param([bool]$ReadOnly = $false)
+    $tb = New-Object System.Windows.Forms.TextBox
+    $tb.Multiline = $true; $tb.Dock = 'Fill'; $tb.ScrollBars = 'Both'
+    $tb.WordWrap = $false; $tb.AcceptsTab = $true; $tb.Font = $script:PPMono
+    $tb.ReadOnly = $ReadOnly
+    return $tb
+}
+
+function New-PPRequestTab {
+    param($Model)
+    $page = New-Object System.Windows.Forms.TabPage
+    $page.Text = $Model.name
+    $page.UseVisualStyleBackColor = $true
+
+    $split = New-Object System.Windows.Forms.SplitContainer
+    $split.Dock = 'Fill'; $split.Orientation = 'Horizontal'; $split.SplitterWidth = 6
+
+    $ctx = @{ model = $Model; page = $page }
+
+    # ---------- request editor (top) ----------
+    $topBar = New-Object System.Windows.Forms.TableLayoutPanel
+    $topBar.Dock = 'Top'; $topBar.Height = 30; $topBar.ColumnCount = 3; $topBar.RowCount = 1
+    [void]$topBar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Absolute, 95)))
+    [void]$topBar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+    [void]$topBar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Absolute, 80)))
+
+    $methodCombo = New-Object System.Windows.Forms.ComboBox
+    $methodCombo.DropDownStyle = 'DropDownList'; $methodCombo.Dock = 'Fill'
+    [void]$methodCombo.Items.AddRange($script:PPMethods)
+    $urlBox = New-Object System.Windows.Forms.TextBox; $urlBox.Dock = 'Fill'
+    $sendBtn = New-Object System.Windows.Forms.Button; $sendBtn.Text = 'Send'; $sendBtn.Dock = 'Fill'
+    $sendBtn.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215); $sendBtn.ForeColor = [System.Drawing.Color]::White
+    $topBar.Controls.Add($methodCombo, 0, 0)
+    $topBar.Controls.Add($urlBox, 1, 0)
+    $topBar.Controls.Add($sendBtn, 2, 0)
+
+    $innerTabs = New-Object System.Windows.Forms.TabControl; $innerTabs.Dock = 'Fill'
+
+    $pgParams = New-Object System.Windows.Forms.TabPage; $pgParams.Text = 'Params'; $pgParams.UseVisualStyleBackColor = $true
+    $paramsGrid = New-PPKvGrid; $pgParams.Controls.Add($paramsGrid)
+
+    $pgHeaders = New-Object System.Windows.Forms.TabPage; $pgHeaders.Text = 'Headers'; $pgHeaders.UseVisualStyleBackColor = $true
+    $headersGrid = New-PPKvGrid; $pgHeaders.Controls.Add($headersGrid)
+
+    $pgBody = New-Object System.Windows.Forms.TabPage; $pgBody.Text = 'Body'; $pgBody.UseVisualStyleBackColor = $true
+    $bodyTypeCombo = New-Object System.Windows.Forms.ComboBox; $bodyTypeCombo.DropDownStyle = 'DropDownList'; $bodyTypeCombo.Dock = 'Top'
+    [void]$bodyTypeCombo.Items.AddRange(@('No body', 'JSON', 'Text', 'Form URL-encoded'))
+    $bodyCards = New-Object System.Windows.Forms.Panel; $bodyCards.Dock = 'Fill'
+    $bodyBox = New-PPMultiline; $formGrid = New-PPKvGrid
+    $bodyCards.Controls.Add($bodyBox); $bodyCards.Controls.Add($formGrid)
+    $pgBody.Controls.Add($bodyCards); $pgBody.Controls.Add($bodyTypeCombo)
+
+    $pgAuth = New-Object System.Windows.Forms.TabPage; $pgAuth.Text = 'Auth'; $pgAuth.UseVisualStyleBackColor = $true
+    $authBuilt = New-PPAuthPanel; $pgAuth.Controls.Add($authBuilt.panel)
+
+    [void]$innerTabs.TabPages.Add($pgParams)
+    [void]$innerTabs.TabPages.Add($pgHeaders)
+    [void]$innerTabs.TabPages.Add($pgBody)
+    [void]$innerTabs.TabPages.Add($pgAuth)
+
+    $split.Panel1.Controls.Add($innerTabs)
+    $split.Panel1.Controls.Add($topBar)
+
+    # ---------- response (bottom) ----------
+    $respStatus = New-Object System.Windows.Forms.Label
+    $respStatus.Dock = 'Top'; $respStatus.Height = 24; $respStatus.TextAlign = 'MiddleLeft'
+    $respStatus.Font = New-Object System.Drawing.Font('Segoe UI', 9.5, [System.Drawing.FontStyle]::Bold)
+    $respStatus.Text = 'No response yet.'
+
+    $respBar = New-Object System.Windows.Forms.Panel; $respBar.Dock = 'Top'; $respBar.Height = 28
+    $copyBtn = New-Object System.Windows.Forms.Button; $copyBtn.Text = 'Copy'; $copyBtn.Dock = 'Left'; $copyBtn.Width = 70
+    $saveBtn = New-Object System.Windows.Forms.Button; $saveBtn.Text = 'Save...'; $saveBtn.Dock = 'Left'; $saveBtn.Width = 70
+    $respBar.Controls.Add($saveBtn); $respBar.Controls.Add($copyBtn)
+
+    $respTabs = New-Object System.Windows.Forms.TabControl; $respTabs.Dock = 'Fill'
+    $pgRBody = New-Object System.Windows.Forms.TabPage; $pgRBody.Text = 'Body'; $pgRBody.UseVisualStyleBackColor = $true
+    $respBodyBox = New-PPMultiline $true; $pgRBody.Controls.Add($respBodyBox)
+    $pgRRaw = New-Object System.Windows.Forms.TabPage; $pgRRaw.Text = 'Raw'; $pgRRaw.UseVisualStyleBackColor = $true
+    $respRawBox = New-PPMultiline $true; $pgRRaw.Controls.Add($respRawBox)
+    $pgRHead = New-Object System.Windows.Forms.TabPage; $pgRHead.Text = 'Headers'; $pgRHead.UseVisualStyleBackColor = $true
+    $respHeadGrid = New-PPReadGrid 'Header' 'Value'; $pgRHead.Controls.Add($respHeadGrid)
+    $pgReq = New-Object System.Windows.Forms.TabPage; $pgReq.Text = 'Request'; $pgReq.UseVisualStyleBackColor = $true
+    $respReqBox = New-PPMultiline $true; $pgReq.Controls.Add($respReqBox)
+    [void]$respTabs.TabPages.Add($pgRBody); [void]$respTabs.TabPages.Add($pgRRaw); [void]$respTabs.TabPages.Add($pgRHead); [void]$respTabs.TabPages.Add($pgReq)
+
+    $split.Panel2.Controls.Add($respTabs)
+    $split.Panel2.Controls.Add($respBar)
+    $split.Panel2.Controls.Add($respStatus)
+
+    $page.Controls.Add($split)
+
+    # ---------- stash refs ----------
+    $ctx.methodCombo = $methodCombo; $ctx.urlBox = $urlBox; $ctx.sendBtn = $sendBtn
+    $ctx.paramsGrid = $paramsGrid; $ctx.headersGrid = $headersGrid
+    $ctx.bodyTypeCombo = $bodyTypeCombo; $ctx.bodyBox = $bodyBox; $ctx.formGrid = $formGrid
+    $ctx.auth = $authBuilt
+    $ctx.respStatus = $respStatus; $ctx.respBodyBox = $respBodyBox; $ctx.respRawBox = $respRawBox; $ctx.respHeadGrid = $respHeadGrid; $ctx.respReqBox = $respReqBox
+    $ctx.split = $split
+    $page.Tag = $ctx
+
+    Set-PPControlsFromModel $ctx
+
+    # ---------- events (use control.Tag = $ctx to stay closure-safe) ----------
+    $sendBtn.Tag = $ctx
+    $sendBtn.Add_Click({ Invoke-PPSend $this.Tag })
+
+    $bodyTypeCombo.Tag = $ctx
+    $bodyTypeCombo.Add_SelectedIndexChanged({ Update-PPBodyCard $this.Tag })
+
+    $authBuilt.refs.typeCombo.Tag = $ctx
+    $authBuilt.refs.typeCombo.Add_SelectedIndexChanged({
+        $c = $this.Tag
+        Show-PPAuthCard $c.auth.refs $script:PPAuthTextToType[[string]$this.SelectedItem]
+    })
+
+    $authBuilt.refs.ccGetBtn.Tag = $ctx
+    $authBuilt.refs.ccGetBtn.Add_Click({ Invoke-PPGetToken $this.Tag 'clientcreds' })
+    $authBuilt.refs.acGetBtn.Tag = $ctx
+    $authBuilt.refs.acGetBtn.Add_Click({ Invoke-PPGetToken $this.Tag 'authcode' })
+
+    $copyBtn.Tag = $ctx
+    $copyBtn.Add_Click({
+        $c = $this.Tag
+        if ($c.respBodyBox.Text) { [System.Windows.Forms.Clipboard]::SetText($c.respBodyBox.Text) }
+    })
+    $saveBtn.Tag = $ctx
+    $saveBtn.Add_Click({ Save-PPResponseToFile $this.Tag })
+
+    $urlBox.Tag = $ctx
+    $urlBox.Add_KeyDown({
+        if ($_.KeyCode -eq 'Return') { $_.SuppressKeyPress = $true; Invoke-PPSend $this.Tag }
+    })
+
+    # SplitterDistance is applied later (in the form's Shown handler) once the
+    # container has a real height — setting it before that throws.
+    $split.Panel1MinSize = 120; $split.Panel2MinSize = 120
+    return $page
+}
+
+# ---- model <-> controls ----
+
+function Set-PPControlsFromModel {
+    param($Ctx)
+    $m = $Ctx.model
+    if ($script:PPMethods -notcontains $m.method) { [void]$Ctx.methodCombo.Items.Add($m.method) }
+    $Ctx.methodCombo.SelectedItem = $m.method
+    $Ctx.urlBox.Text = $m.url
+    Set-PPKvGrid $Ctx.paramsGrid $m.params
+    Set-PPKvGrid $Ctx.headersGrid $m.headers
+    $Ctx.bodyTypeCombo.SelectedItem = $script:PPBodyTypeToText[$m.bodyType]
+    $Ctx.bodyBox.Text = $m.body
+    Set-PPKvGrid $Ctx.formGrid $m.form
+
+    $r = $Ctx.auth.refs; $a = $m.auth
+    $r.typeCombo.SelectedItem = $script:PPAuthTypeToText[$a.type]
+    $r.bearerBox.Text = $a.bearerToken
+    $r.basicUser.Text = $a.basicUser; $r.basicPass.Text = $a.basicPass
+    $r.ccTokenUrl.Text = $a.tokenUrl; $r.ccClientId.Text = $a.clientId
+    $r.ccClientSecret.Text = $a.clientSecret; $r.ccScope.Text = $a.scope
+    $r.ccStyle.SelectedIndex = $(if ($a.clientAuthStyle -eq 'header') { 1 } else { 0 })
+    $r.acAuthUrl.Text = $a.authUrl; $r.acTokenUrl.Text = $a.tokenUrl; $r.acClientId.Text = $a.clientId
+    $r.acClientSecret.Text = $a.clientSecret; $r.acScope.Text = $a.scope
+    $r.acPort.Text = [string]$a.redirectPort; $r.acPkce.Checked = [bool]$a.usePkce
+    if ($a.accessToken) {
+        $r.ccStatus.Text = 'Cached token present.'; $r.acStatus.Text = 'Cached token present.'
+    }
+    Show-PPAuthCard $r $a.type
+    Update-PPBodyCard $Ctx
+}
+
+function Sync-PPTabToModel {
+    param($Ctx)
+    $m = $Ctx.model
+    $m.method = [string]$Ctx.methodCombo.SelectedItem
+    $m.url = $Ctx.urlBox.Text
+    $m.params = Get-PPKvGrid $Ctx.paramsGrid
+    $m.headers = Get-PPKvGrid $Ctx.headersGrid
+    $m.bodyType = $script:PPBodyTextToType[[string]$Ctx.bodyTypeCombo.SelectedItem]
+    $m.body = $Ctx.bodyBox.Text
+    $m.form = Get-PPKvGrid $Ctx.formGrid
+    Sync-PPAuthToModel $Ctx
+    $Ctx.page.Text = $m.name
+}
+
+function Sync-PPAuthToModel {
+    param($Ctx)
+    $a = $Ctx.model.auth; $r = $Ctx.auth.refs
+    $a.type = $script:PPAuthTextToType[[string]$r.typeCombo.SelectedItem]
+    $a.bearerToken = $r.bearerBox.Text
+    $a.basicUser = $r.basicUser.Text; $a.basicPass = $r.basicPass.Text
+    switch ($a.type) {
+        'clientcreds' {
+            $a.tokenUrl = $r.ccTokenUrl.Text; $a.clientId = $r.ccClientId.Text
+            $a.clientSecret = $r.ccClientSecret.Text; $a.scope = $r.ccScope.Text
+            $a.clientAuthStyle = $(if ($r.ccStyle.SelectedIndex -eq 1) { 'header' } else { 'body' })
+        }
+        'authcode' {
+            $a.authUrl = $r.acAuthUrl.Text; $a.tokenUrl = $r.acTokenUrl.Text
+            $a.clientId = $r.acClientId.Text; $a.clientSecret = $r.acClientSecret.Text
+            $a.scope = $r.acScope.Text; $a.usePkce = [bool]$r.acPkce.Checked
+            $p = 8080; [void][int]::TryParse($r.acPort.Text, [ref]$p); $a.redirectPort = $p
+        }
+    }
+}
+
+function Update-PPBodyCard {
+    param($Ctx)
+    $type = $script:PPBodyTextToType[[string]$Ctx.bodyTypeCombo.SelectedItem]
+    $showText = ($type -eq 'json' -or $type -eq 'text')
+    $Ctx.bodyBox.Visible = $showText
+    $Ctx.formGrid.Visible = ($type -eq 'form')
+    if ($showText) { $Ctx.bodyBox.BringToFront() }
+    elseif ($type -eq 'form') { $Ctx.formGrid.BringToFront() }
+}

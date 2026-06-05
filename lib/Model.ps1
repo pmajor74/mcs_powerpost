@@ -1,0 +1,146 @@
+# Model.ps1 — default data model + normalization of loaded JSON.
+# The whole app state is plain hashtables/arrays so it serializes cleanly to JSON.
+
+# Safe property read from a PSCustomObject (what ConvertFrom-Json returns) with a default.
+function Get-PPProp {
+    param($Object, [string]$Name, $Default = $null)
+    if ($null -eq $Object) { return $Default }
+    $p = $Object.PSObject.Properties[$Name]
+    if ($null -eq $p -or $null -eq $p.Value) { return $Default }
+    return $p.Value
+}
+
+# A single key/value row (used by params, headers, form body).
+function New-PPKv {
+    param([bool]$Enabled = $true, [string]$Key = '', [string]$Value = '')
+    return @{ enabled = $Enabled; key = $Key; value = $Value }
+}
+
+function New-PPAuth {
+    return @{
+        type            = 'none'        # none | bearer | basic | clientcreds | authcode
+        bearerToken     = ''
+        basicUser       = ''
+        basicPass       = ''
+        # OAuth2 (shared)
+        tokenUrl        = ''
+        clientId        = ''
+        clientSecret    = ''
+        scope           = ''
+        clientAuthStyle = 'body'        # body | header  (how client id/secret are sent)
+        # OAuth2 authorization code
+        authUrl         = ''
+        redirectPort    = 8080
+        usePkce         = $true
+        # cached token (both OAuth flows)
+        accessToken     = ''
+        tokenExpiry     = ''            # ISO-8601 UTC string, '' when none
+    }
+}
+
+function New-PPTab {
+    param([string]$Name = 'New Request')
+    return @{
+        name     = $Name
+        method   = 'GET'
+        url      = ''
+        params   = @()                  # query-string rows
+        headers  = @()
+        bodyType = 'none'               # none | json | text | form
+        body     = ''                   # raw text for json/text
+        form     = @()                  # rows for x-www-form-urlencoded
+        auth     = (New-PPAuth)
+    }
+}
+
+function New-PPState {
+    return @{
+        version   = 1
+        window    = @{ width = 1100; height = 780; x = -1; y = -1; maximized = $false }
+        activeTab = 0
+        ignoreSsl = $false
+        timeout   = 100
+        tabs      = @((New-PPTab))
+    }
+}
+
+# --- normalization: turn parsed JSON (PSCustomObject) into our hashtable model ---
+
+function Resolve-PPKv {
+    param($Raw)
+    return @{
+        enabled = [bool](Get-PPProp $Raw 'enabled' $true)
+        key     = [string](Get-PPProp $Raw 'key' '')
+        value   = [string](Get-PPProp $Raw 'value' '')
+    }
+}
+
+function Resolve-PPKvList {
+    param($Raw)
+    $list = @()
+    foreach ($r in @($Raw)) { if ($null -ne $r) { $list += (Resolve-PPKv $r) } }
+    return , $list
+}
+
+function Resolve-PPAuth {
+    param($Raw)
+    $a = New-PPAuth
+    if ($null -eq $Raw) { return $a }
+    $a.type            = [string](Get-PPProp $Raw 'type' $a.type)
+    $a.bearerToken     = [string](Get-PPProp $Raw 'bearerToken' '')
+    $a.basicUser       = [string](Get-PPProp $Raw 'basicUser' '')
+    $a.basicPass       = [string](Get-PPProp $Raw 'basicPass' '')
+    $a.tokenUrl        = [string](Get-PPProp $Raw 'tokenUrl' '')
+    $a.clientId        = [string](Get-PPProp $Raw 'clientId' '')
+    $a.clientSecret    = [string](Get-PPProp $Raw 'clientSecret' '')
+    $a.scope           = [string](Get-PPProp $Raw 'scope' '')
+    $a.clientAuthStyle = [string](Get-PPProp $Raw 'clientAuthStyle' 'body')
+    $a.authUrl         = [string](Get-PPProp $Raw 'authUrl' '')
+    $a.redirectPort    = [int](Get-PPProp $Raw 'redirectPort' 8080)
+    $a.usePkce         = [bool](Get-PPProp $Raw 'usePkce' $true)
+    $a.accessToken     = [string](Get-PPProp $Raw 'accessToken' '')
+    $a.tokenExpiry     = [string](Get-PPProp $Raw 'tokenExpiry' '')
+    return $a
+}
+
+function Resolve-PPTab {
+    param($Raw)
+    $t = New-PPTab
+    if ($null -eq $Raw) { return $t }
+    $t.name     = [string](Get-PPProp $Raw 'name' 'New Request')
+    $t.method   = [string](Get-PPProp $Raw 'method' 'GET')
+    $t.url      = [string](Get-PPProp $Raw 'url' '')
+    $t.params   = Resolve-PPKvList (Get-PPProp $Raw 'params' @())
+    $t.headers  = Resolve-PPKvList (Get-PPProp $Raw 'headers' @())
+    $t.bodyType = [string](Get-PPProp $Raw 'bodyType' 'none')
+    $t.body     = [string](Get-PPProp $Raw 'body' '')
+    $t.form     = Resolve-PPKvList (Get-PPProp $Raw 'form' @())
+    $t.auth     = Resolve-PPAuth (Get-PPProp $Raw 'auth' $null)
+    return $t
+}
+
+function Resolve-PPState {
+    param($Raw)
+    $s = New-PPState
+    if ($null -eq $Raw) { return $s }
+    $s.version   = [int](Get-PPProp $Raw 'version' 1)
+    $s.activeTab = [int](Get-PPProp $Raw 'activeTab' 0)
+    $s.ignoreSsl = [bool](Get-PPProp $Raw 'ignoreSsl' $false)
+    $s.timeout   = [int](Get-PPProp $Raw 'timeout' 100)
+
+    $w = Get-PPProp $Raw 'window' $null
+    $s.window = @{
+        width     = [int](Get-PPProp $w 'width' 1100)
+        height    = [int](Get-PPProp $w 'height' 780)
+        x         = [int](Get-PPProp $w 'x' -1)
+        y         = [int](Get-PPProp $w 'y' -1)
+        maximized = [bool](Get-PPProp $w 'maximized' $false)
+    }
+
+    $tabs = @()
+    foreach ($rt in @(Get-PPProp $Raw 'tabs' @())) { $tabs += (Resolve-PPTab $rt) }
+    if ($tabs.Count -eq 0) { $tabs = @((New-PPTab)) }
+    $s.tabs = $tabs
+    if ($s.activeTab -lt 0 -or $s.activeTab -ge $s.tabs.Count) { $s.activeTab = 0 }
+    return $s
+}
