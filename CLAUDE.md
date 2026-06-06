@@ -37,16 +37,17 @@ The auto-close hook lives in `Start-PowerPost`'s `Add_Shown` handler.
 
 `PowerPost.ps1` is the entry point: STA guard → TLS1.2 + cert-policy setup → dot-sources
 `lib\*.ps1` in dependency order → either `-SelfTest` or `Start-PowerPost`. In `-SelfTest`
-mode only the non-UI libs load (`Model, Json, State, Http, Auth, Vars`); GUI libs are
+mode only the non-UI libs load (`Model, Json, State, Http, Auth, Vars, Curl`); GUI libs are
 skipped, so keep those free of WinForms dependencies.
 
 Layered, leaf-first load order (`PowerPost.ps1`):
-`Model → Json → State → Http → Auth → Vars` then
-`Ui.Controls → Ui.Env → Ui.Collections → Ui.Tab → Ui.Send → Ui.Main`.
+`Model → Json → State → Http → Auth → Vars → Curl` then
+`Ui.Controls → Ui.Env → Ui.Collections → Ui.Code → Ui.Tab → Ui.Send → Ui.Main`.
 Dependencies only point downward; don't introduce upward calls. `Vars.ps1` holds the
 UI-free `{{variable}}` substitution (`Expand-PPVars`, `Get-PPVarMap`, `Expand-PPKvList`,
-`Expand-PPAuth`); `Ui.Env.ps1` is the environment selector + manager dialog;
-`Ui.Collections.ps1` is the saved-request sidebar.
+`Expand-PPAuth`); `Curl.ps1` holds UI-free cURL import/export; `Ui.Env.ps1` is the
+environment selector + manager dialog; `Ui.Collections.ps1` is the saved-request sidebar;
+`Ui.Code.ps1` is the cURL import dialog + copy-as commands.
 
 Key design points to preserve:
 
@@ -99,6 +100,14 @@ Key design points to preserve:
   manager, all handlers read `$Global:PPApp` (e.g. `$Global:PPApp.tree.SelectedNode`) rather than
   captured locals. `Build-PPStateFromUi` leaves `collections`/`environments`/`activeEnv` untouched,
   so they persist across the autosave-on-close.
+
+- **cURL import/export** (`Curl.ps1` + `Ui.Code.ps1`): `Split-PPCommandLine` is a quote-aware
+  tokenizer (handles `'`/`"` and `\`/`^`/backtick line continuations). `ConvertFrom-PPCurl`
+  produces a `New-PPTab`-shaped model (mapping `-u` and `Authorization: Bearer`/`Basic` to the
+  auth model, the rest to header rows); `ConvertTo-PPCurl`/`ConvertTo-PPPowerShell` go the other
+  way, expanding `{{variables}}` first so output is runnable. Import opens a new tab; the copy
+  commands act on the current tab via `Get-PPCurrentCtx`. Keep this UI-free so `-SelfTest` covers
+  the parse/generate round-trip.
 
 - **Persistence** (`State.ps1`): state saves to `powerpost.state.json` next to the script on
   Ctrl+S and on window close (`Add_FormClosing`). Corrupt files are backed up to `.bak` and a

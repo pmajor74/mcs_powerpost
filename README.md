@@ -23,6 +23,7 @@ product.
   - [Keyboard shortcuts](#keyboard-shortcuts)
   - [Collections](#collections)
   - [Environments](#environments)
+  - [Import & export](#import--export)
 - [OAuth notes](#oauth-notes)
 - [Security](#security)
 - [Validate the build](#validate-the-build)
@@ -40,6 +41,9 @@ product.
   current tab into a collection, double-click a saved request to open it in a new tab, and
   right-click to rename, duplicate, or delete. See [Collections](#collections).
 - **Methods** — GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS.
+- **cURL import / export** — paste a cURL command (toolbar **Import cURL**) to build a request in
+  a new tab, or right-click a tab → **Copy as cURL** / **Copy as PowerShell** to copy a runnable
+  snippet of the current request. See [Import & export](#import--export).
 - **Environments & variables** — define named environments of `{{variable}}` values and switch
   between them from the toolbar. Tokens like `{{baseUrl}}` / `{{token}}` are substituted into the
   URL, params, headers, body, form fields, and auth at send time (the `Request` preview shows the
@@ -131,6 +135,16 @@ variables are left untouched (e.g. `{{missing}}` is sent as-is) so you can spot 
 Environments and the active selection are saved in `powerpost.state.json` along with everything
 else. **Note:** variable values are stored in plaintext — see [Security](#security).
 
+### Import & export
+
+- **Import cURL** (toolbar) — paste a cURL command and PowerPost parses it into a new tab:
+  method, URL, headers, body (JSON / form / text), and `-u` or `Authorization: Bearer`/`Basic`
+  headers become the request's auth. Common no-op flags (`-k`, `-L`, `-s`, …) are ignored.
+- **Copy as cURL** / **Copy as PowerShell** (right-click a tab) — copies the current request to
+  the clipboard as a bash-style `curl` command or an `Invoke-RestMethod` script. `{{variables}}`
+  are resolved against the active environment first, so the snippet is runnable as-is. (For OAuth
+  auth, the snippet includes a token only if one has already been fetched.)
+
 ## OAuth notes
 
 - **Authorization Code:** the redirect URI is `http://localhost:<Redirect Port>/` (default
@@ -168,9 +182,11 @@ lib\Json.ps1         JSON pretty-printer
 lib\Http.ps1         request execution via HttpClient
 lib\Auth.ps1         auth headers + OAuth2 token acquisition (client-creds, auth-code+PKCE)
 lib\Vars.ps1         {{variable}} substitution (environments)
+lib\Curl.ps1         cURL import + cURL/PowerShell export
 lib\Ui.Controls.ps1  reusable WinForms builders (grids, fields, auth panel)
 lib\Ui.Env.ps1       environment selector + manager dialog
 lib\Ui.Collections.ps1  collections sidebar (tree of saved requests) + commands
+lib\Ui.Code.ps1      cURL import dialog + copy-as-cURL/PowerShell commands
 lib\Ui.Tab.ps1       per-tab editor + response panel + model<->controls sync
 lib\Ui.Send.ps1      send, render response, fetch tokens, save response
 lib\Ui.Main.ps1      main window, toolbar, tab management, save/close, About
@@ -183,7 +199,7 @@ Planned features to bring MCS PowerPost closer to Postman, roughly in priority o
 - ~~**Environments & variables**~~ — ✅ shipped: `{{baseUrl}}` / `{{token}}` substitution with
   switchable environments.
 - ~~**Collections**~~ — ✅ shipped: a saved-request sidebar tree alongside the tabs.
-- **cURL import / export** — paste a cURL command to build a request; copy as cURL or PowerShell.
+- ~~**cURL import / export**~~ — ✅ shipped: paste cURL to build a request; copy as cURL or PowerShell.
 - **multipart/form-data** — file-upload request bodies.
 - **Request history** — recent sends with one-click reload.
 - **Response search** — find within large response bodies.

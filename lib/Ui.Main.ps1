@@ -174,6 +174,7 @@ function Start-PowerPost {
     $btnClose = New-PPToolbarButton 'Close Tab'
     $btnSave = New-PPToolbarButton 'Save'
     $btnAbout = New-PPToolbarButton 'About'
+    $btnImport = New-PPToolbarButton 'Import cURL'; $btnImport.Width = 100
     $btnEnv  = New-PPToolbarButton 'Environments'; $btnEnv.Width = 104
     $envCombo = New-Object System.Windows.Forms.ComboBox
     $envCombo.DropDownStyle = 'DropDownList'; $envCombo.Dock = 'Left'; $envCombo.Width = 170
@@ -189,6 +190,7 @@ function Start-PowerPost {
     $toolbar.Controls.Add($chkSsl)
     $toolbar.Controls.Add($btnEnv)
     $toolbar.Controls.Add($envCombo)
+    $toolbar.Controls.Add($btnImport)
     $toolbar.Controls.Add($btnSave)
     $toolbar.Controls.Add($btnClose)
     $toolbar.Controls.Add($btnDup)
@@ -230,9 +232,14 @@ function Start-PowerPost {
     $miRename = $menu.Items.Add('Rename')
     $miDup    = $menu.Items.Add('Duplicate')
     $miClose  = $menu.Items.Add('Close')
+    [void]$menu.Items.Add('-')
+    $miCurl   = $menu.Items.Add('Copy as cURL')
+    $miPs     = $menu.Items.Add('Copy as PowerShell')
     $miRename.Add_Click({ Rename-PPTabCmd $null })
     $miDup.Add_Click({ Copy-PPTabCmd })
     $miClose.Add_Click({ Close-PPTabCmd })
+    $miCurl.Add_Click({ Copy-PPAsCurlCmd })
+    $miPs.Add_Click({ Copy-PPAsPowerShellCmd })
     $tabControl.ContextMenuStrip = $menu
 
     # build tabs from state
@@ -250,6 +257,7 @@ function Start-PowerPost {
     $btnClose.Add_Click({ Close-PPTabCmd })
     $btnSave.Add_Click({ Save-PPAll })
     $btnAbout.Add_Click({ Show-PPAbout })
+    $btnImport.Add_Click({ Show-PPImportCurl })
     $envCombo.Add_SelectedIndexChanged({
         $idx = $this.SelectedIndex
         if ($idx -le 0) { $Global:PPApp.state.activeEnv = '' }

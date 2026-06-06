@@ -60,8 +60,8 @@ if (-not $SelfTest) {
 }
 
 # Load the library (order: leaf dependencies first).
-$libFiles = @('Model.ps1', 'Json.ps1', 'State.ps1', 'Http.ps1', 'Auth.ps1', 'Vars.ps1')
-if (-not $SelfTest) { $libFiles += @('Ui.Controls.ps1', 'Ui.Env.ps1', 'Ui.Collections.ps1', 'Ui.Tab.ps1', 'Ui.Send.ps1', 'Ui.Main.ps1') }
+$libFiles = @('Model.ps1', 'Json.ps1', 'State.ps1', 'Http.ps1', 'Auth.ps1', 'Vars.ps1', 'Curl.ps1')
+if (-not $SelfTest) { $libFiles += @('Ui.Controls.ps1', 'Ui.Env.ps1', 'Ui.Collections.ps1', 'Ui.Code.ps1', 'Ui.Tab.ps1', 'Ui.Send.ps1', 'Ui.Main.ps1') }
 foreach ($f in $libFiles) { . (Join-Path $PSScriptRoot "lib\$f") }
 
 function Invoke-PPSelfTest {
@@ -116,7 +116,22 @@ function Invoke-PPSelfTest {
     $expanded = Expand-PPVars 'https://{{host}}/{{ ver }}/x?d={{off}}&m={{nope}}' $map
     Check 'var substitution' ($expanded -eq 'https://api.example.com/v2/x?d={{off}}&m={{nope}}') "got $expanded"
 
-    # 5. live HTTP (needs network; reported as FAIL if unreachable)
+    # 5. cURL import / export
+    $sampleCurl = @'
+curl -X POST 'https://api.test/v1/users?team=eng' -H 'Accept: application/json' -H 'Content-Type: application/json' -H 'Authorization: Bearer abc123' --data '{"name":"Sam"}'
+'@
+    $cm = ConvertFrom-PPCurl $sampleCurl
+    Check 'curl import method/url' (($cm.method -eq 'POST') -and ($cm.url -eq 'https://api.test/v1/users?team=eng')) "m=$($cm.method) u=$($cm.url)"
+    Check 'curl import bearer' (($cm.auth.type -eq 'bearer') -and ($cm.auth.bearerToken -eq 'abc123')) "type=$($cm.auth.type)"
+    Check 'curl import body' (($cm.bodyType -eq 'json') -and ($cm.body -match 'Sam')) "bt=$($cm.bodyType)"
+    $authHdrCount = @($cm.headers | Where-Object { $_.key -ieq 'Authorization' }).Count
+    Check 'curl import strips auth header' ($authHdrCount -eq 0) "count=$authHdrCount"
+    $back = ConvertTo-PPCurl $cm @{}
+    Check 'curl export' (($back -match 'curl -X POST') -and ($back -match 'Bearer abc123') -and ($back -match 'api\.test/v1/users')) 'export missing parts'
+    $ps = ConvertTo-PPPowerShell $cm @{}
+    Check 'powershell export' (($ps -match 'Invoke-RestMethod') -and ($ps -match "-Method POST") -and ($ps -match "ContentType 'application/json'")) 'ps export missing parts'
+
+    # 6. live HTTP (needs network; reported as FAIL if unreachable)
     try {
         $g = Invoke-PPRequest -Method 'GET' -Url 'https://postman-echo.com/get?ping=1' -TimeoutSec 30
         Check 'HTTP GET 200' ($g.ok -and $g.statusCode -eq 200) "ok=$($g.ok) code=$($g.statusCode) err=$($g.error)"
