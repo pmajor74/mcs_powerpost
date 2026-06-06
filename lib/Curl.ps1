@@ -62,7 +62,7 @@ function ConvertFrom-PPCurl {
     foreach ($tk in @(Split-PPCommandLine $Text)) { [void]$list.Add($tk) }
     if ($list.Count -gt 0 -and $list[0] -ieq 'curl') { $list.RemoveAt(0) }
 
-    $method = ''; $url = ''; $hdrRaw = @(); $dataParts = @()
+    $method = ''; $url = ''; $hdrRaw = @(); $dataParts = @(); $formParts = @()
     $isGet = $false; $userinfo = ''; $haveUser = $false
     $i = 0
     while ($i -lt $list.Count) {
@@ -75,6 +75,8 @@ function ConvertFrom-PPCurl {
         elseif ($a -match '^--data(?:-raw|-binary|-ascii)?=(.*)$')               { $dataParts += $matches[1] }
         elseif ($a -match '^--data-urlencode$')        { $i++; if ($i -lt $list.Count) { $dataParts += $list[$i] } }
         elseif ($a -match '^--data-urlencode=(.*)$')   { $dataParts += $matches[1] }
+        elseif ($a -match '^(-F|--form)$')             { $i++; if ($i -lt $list.Count) { $formParts += $list[$i] } }
+        elseif ($a -match '^--form=(.+)$')             { $formParts += $matches[1] }
         elseif ($a -match '^(-u|--user)$')             { $i++; if ($i -lt $list.Count) { $userinfo = $list[$i]; $haveUser = $true } }
         elseif ($a -match '^--user=(.+)$')             { $userinfo = $matches[1]; $haveUser = $true }
         elseif ($a -match '^(-G|--get)$')              { $isGet = $true }
@@ -121,7 +123,21 @@ function ConvertFrom-PPCurl {
     $data = ($dataParts -join '&')
     $ctHeader = ''
     foreach ($h in $m.headers) { if ($h.key -ieq 'Content-Type') { $ctHeader = $h.value } }
-    if ($isGet -and $data) {
+    if (@($formParts).Count -gt 0) {
+        $m.bodyType = 'multipart'
+        foreach ($fp in $formParts) {
+            $eq = $fp.IndexOf('=')
+            if ($eq -lt 0) { continue }
+            $k = $fp.Substring(0, $eq); $val = $fp.Substring($eq + 1)
+            if ($val.StartsWith('@') -or $val.StartsWith('<')) {
+                $p = $val.Substring(1)
+                $sc = $p.IndexOf(';'); if ($sc -ge 0) { $p = $p.Substring(0, $sc) }  # drop ;type=/;filename=
+                $m.multipart += (New-PPMultipartRow $true $k 'file' $p)
+            } else {
+                $m.multipart += (New-PPMultipartRow $true $k 'text' $val)
+            }
+        }
+    } elseif ($isGet -and $data) {
         foreach ($row in (ConvertFrom-PPQueryString $data)) { $m.params += $row }
     } elseif ($data -ne '') {
         if ($ctHeader -match 'json') { $m.bodyType = 'json'; $m.body = $data }
@@ -130,7 +146,9 @@ function ConvertFrom-PPCurl {
         else { $m.bodyType = 'text'; $m.body = $data }
     }
 
-    if (-not $method) { if ($data -and -not $isGet) { $method = 'POST' } else { $method = 'GET' } }
+    if (-not $method) {
+        if ((($data -and -not $isGet)) -or (@($formParts).Count -gt 0)) { $method = 'POST' } else { $method = 'GET' }
+    }
     $m.method = $method
     return $m
 }
@@ -176,6 +194,14 @@ function ConvertTo-PPCurl {
         'json' { if ($Model.body) { if (-not $hasCt) { $parts += '  -H ' + (Quote-PPSh 'Content-Type: application/json') }; $parts += '  --data ' + (Quote-PPSh (Expand-PPVars $Model.body $Map)) } }
         'text' { if ($Model.body) { $parts += '  --data ' + (Quote-PPSh (Expand-PPVars $Model.body $Map)) } }
         'form' { $fb = ConvertTo-PPFormBody (Expand-PPKvList $Model.form $Map); if ($fb) { if (-not $hasCt) { $parts += '  -H ' + (Quote-PPSh 'Content-Type: application/x-www-form-urlencoded') }; $parts += '  --data ' + (Quote-PPSh $fb) } }
+        'multipart' {
+            foreach ($row in (Expand-PPMultipartList $Model.multipart $Map)) {
+                if ($row.enabled -and $row.key) {
+                    if ($row.kind -eq 'file') { $parts += '  -F ' + (Quote-PPSh ('{0}=@{1}' -f $row.key, $row.value)) }
+                    else { $parts += '  -F ' + (Quote-PPSh ('{0}={1}' -f $row.key, $row.value)) }
+                }
+            }
+        }
     }
     if ($Global:PPIgnoreSsl) { $parts += '  --insecure' }
     return ($parts -join " \`n")
@@ -199,11 +225,12 @@ function ConvertTo-PPPowerShell {
     if ($hdrs.Count) { $lines += '$headers = @{'; $lines += $hdrs; $lines += '}' }
     $argsList = @("-Method $($Model.method)", '-Uri ' + (Quote-PPPs $url))
     if ($hdrs.Count) { $argsList += '-Headers $headers' }
-    $ct = ''; $body = ''
+    $ct = ''; $body = ''; $note = ''
     switch ($Model.bodyType) {
         'json' { $ct = 'application/json'; $body = Expand-PPVars $Model.body $Map }
         'text' { $ct = 'text/plain'; $body = Expand-PPVars $Model.body $Map }
         'form' { $ct = 'application/x-www-form-urlencoded'; $body = ConvertTo-PPFormBody (Expand-PPKvList $Model.form $Map) }
+        'multipart' { $note = '# Note: multipart/form-data (file upload) is omitted - use "Copy as cURL" for that.' }
     }
     if ($body) {
         $lines += ('$body = ' + (Quote-PPPs $body))
@@ -211,5 +238,6 @@ function ConvertTo-PPPowerShell {
         if ($ct) { $argsList += "-ContentType '$ct'" }
     }
     $lines += ('Invoke-RestMethod ' + ($argsList -join ' '))
+    if ($note) { $lines = @($note) + $lines }
     return ($lines -join "`n")
 }

@@ -44,6 +44,7 @@ function Invoke-PPRequest {
         [string]$BodyType = 'none',
         [string]$Body = '',
         $Form = @(),
+        $Multipart = @(),
         [int]$TimeoutSec = 100
     )
 
@@ -76,6 +77,26 @@ function Invoke-PPRequest {
                 'form' {
                     $fb = ConvertTo-PPFormBody $Form
                     $content = New-Object System.Net.Http.StringContent($fb, [System.Text.Encoding]::UTF8, 'application/x-www-form-urlencoded')
+                }
+                'multipart' {
+                    # MultipartFormDataContent sets its own Content-Type (with boundary).
+                    $mp = New-Object System.Net.Http.MultipartFormDataContent
+                    foreach ($row in @($Multipart)) {
+                        if ($null -eq $row -or -not $row.enabled) { continue }
+                        if ([string]::IsNullOrEmpty([string]$row.key)) { continue }
+                        if ($row.kind -eq 'file') {
+                            $path = [string]$row.value
+                            if (-not (Test-Path -LiteralPath $path)) { throw "File not found for field '$($row.key)': $path" }
+                            $bytes = [System.IO.File]::ReadAllBytes($path)
+                            $fc = New-Object System.Net.Http.ByteArrayContent($bytes, 0, $bytes.Length)
+                            $fc.Headers.ContentType = New-Object System.Net.Http.Headers.MediaTypeHeaderValue('application/octet-stream')
+                            $mp.Add($fc, [string]$row.key, [System.IO.Path]::GetFileName($path))
+                        } else {
+                            $sc = New-Object System.Net.Http.StringContent([string]$row.value, [System.Text.Encoding]::UTF8)
+                            $mp.Add($sc, [string]$row.key)
+                        }
+                    }
+                    $content = $mp
                 }
                 default { }
             }

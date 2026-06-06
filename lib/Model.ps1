@@ -16,6 +16,12 @@ function New-PPKv {
     return @{ enabled = $Enabled; key = $Key; value = $Value }
 }
 
+# A multipart/form-data field: a text value or a file (value holds the file path).
+function New-PPMultipartRow {
+    param([bool]$Enabled = $true, [string]$Key = '', [string]$Kind = 'text', [string]$Value = '')
+    return @{ enabled = $Enabled; key = $Key; kind = $Kind; value = $Value }   # kind: text | file
+}
+
 function New-PPAuth {
     return @{
         type            = 'none'        # none | bearer | basic | clientcreds | authcode
@@ -41,15 +47,16 @@ function New-PPAuth {
 function New-PPTab {
     param([string]$Name = 'New Request')
     return @{
-        name     = $Name
-        method   = 'GET'
-        url      = ''
-        params   = @()                  # query-string rows
-        headers  = @()
-        bodyType = 'none'               # none | json | text | form
-        body     = ''                   # raw text for json/text
-        form     = @()                  # rows for x-www-form-urlencoded
-        auth     = (New-PPAuth)
+        name      = $Name
+        method    = 'GET'
+        url       = ''
+        params    = @()                 # query-string rows
+        headers   = @()
+        bodyType  = 'none'              # none | json | text | form | multipart
+        body      = ''                  # raw text for json/text
+        form      = @()                 # rows for x-www-form-urlencoded
+        multipart = @()                 # rows for multipart/form-data (New-PPMultipartRow)
+        auth      = (New-PPAuth)
     }
 }
 
@@ -97,6 +104,23 @@ function Resolve-PPKvList {
     return , $list
 }
 
+function Resolve-PPMultipartRow {
+    param($Raw)
+    return @{
+        enabled = [bool](Get-PPProp $Raw 'enabled' $true)
+        key     = [string](Get-PPProp $Raw 'key' '')
+        kind    = [string](Get-PPProp $Raw 'kind' 'text')
+        value   = [string](Get-PPProp $Raw 'value' '')
+    }
+}
+
+function Resolve-PPMultipartList {
+    param($Raw)
+    $list = @()
+    foreach ($r in @($Raw)) { if ($null -ne $r) { $list += (Resolve-PPMultipartRow $r) } }
+    return , $list
+}
+
 function Resolve-PPAuth {
     param($Raw)
     $a = New-PPAuth
@@ -127,10 +151,11 @@ function Resolve-PPTab {
     $t.url      = [string](Get-PPProp $Raw 'url' '')
     $t.params   = Resolve-PPKvList (Get-PPProp $Raw 'params' @())
     $t.headers  = Resolve-PPKvList (Get-PPProp $Raw 'headers' @())
-    $t.bodyType = [string](Get-PPProp $Raw 'bodyType' 'none')
-    $t.body     = [string](Get-PPProp $Raw 'body' '')
-    $t.form     = Resolve-PPKvList (Get-PPProp $Raw 'form' @())
-    $t.auth     = Resolve-PPAuth (Get-PPProp $Raw 'auth' $null)
+    $t.bodyType  = [string](Get-PPProp $Raw 'bodyType' 'none')
+    $t.body      = [string](Get-PPProp $Raw 'body' '')
+    $t.form      = Resolve-PPKvList (Get-PPProp $Raw 'form' @())
+    $t.multipart = Resolve-PPMultipartList (Get-PPProp $Raw 'multipart' @())
+    $t.auth      = Resolve-PPAuth (Get-PPProp $Raw 'auth' $null)
     return $t
 }
 

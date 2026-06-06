@@ -16,7 +16,7 @@ function Format-PPSize {
 
 # Render the exact request that goes on the wire (final URL, headers incl. auth, body).
 function Format-PPRequestPreview {
-    param($Method, $Url, $Headers, $AuthHeaders, $BodyType, $Body, $Form)
+    param($Method, $Url, $Headers, $AuthHeaders, $BodyType, $Body, $Form, $Multipart = @())
     $sb = New-Object System.Text.StringBuilder
     [void]$sb.AppendLine("$Method $Url")
     [void]$sb.AppendLine('')
@@ -34,16 +34,27 @@ function Format-PPRequestPreview {
         'json' { 'application/json; charset=utf-8' }
         'text' { 'text/plain; charset=utf-8' }
         'form' { 'application/x-www-form-urlencoded; charset=utf-8' }
+        'multipart' { 'multipart/form-data; boundary=...' }
         default { '' }
     }
     if ($implied -and -not $hasContentType) { [void]$sb.AppendLine("Content-Type: $implied") }
     [void]$sb.AppendLine('')
-    $bodyText = switch ($BodyType) {
-        'form' { ConvertTo-PPFormBody $Form }
-        'none' { '(no body)' }
-        default { if ([string]::IsNullOrEmpty($Body)) { '(no body)' } else { $Body } }
+    if ($BodyType -eq 'multipart') {
+        $lines = @()
+        foreach ($row in @($Multipart)) {
+            if ($null -eq $row -or -not $row.enabled -or [string]::IsNullOrEmpty([string]$row.key)) { continue }
+            if ($row.kind -eq 'file') { $lines += "$($row.key): @$($row.value)  (file)" }
+            else { $lines += "$($row.key): $($row.value)" }
+        }
+        [void]$sb.Append($(if ($lines.Count) { $lines -join "`r`n" } else { '(no fields)' }))
+    } else {
+        $bodyText = switch ($BodyType) {
+            'form' { ConvertTo-PPFormBody $Form }
+            'none' { '(no body)' }
+            default { if ([string]::IsNullOrEmpty($Body)) { '(no body)' } else { $Body } }
+        }
+        [void]$sb.Append($bodyText)
     }
-    [void]$sb.Append($bodyText)
     return $sb.ToString()
 }
 
@@ -72,20 +83,21 @@ function Invoke-PPSend {
         $headers = Expand-PPKvList $m.headers $vars
         $body    = Expand-PPVars $m.body $vars
         $formRows = Expand-PPKvList $m.form $vars
+        $mpRows  = Expand-PPMultipartList $m.multipart $vars
         $authExpanded = Expand-PPAuth $m.auth $vars
         $auth = Resolve-PPAuthHeaders $authExpanded $timeout
         # Carry any freshly fetched/refreshed token back to the persisted model.
         $m.auth.accessToken = $authExpanded.accessToken
         $m.auth.tokenExpiry = $authExpanded.tokenExpiry
         if (-not $auth.ok) {
-            $Ctx.respReqBox.Text = Format-PPRequestPreview $m.method $url $headers @() $m.bodyType $body $formRows
+            $Ctx.respReqBox.Text = Format-PPRequestPreview $m.method $url $headers @() $m.bodyType $body $formRows $mpRows
             $Ctx.respStatus.ForeColor = [System.Drawing.Color]::DarkRed
             $Ctx.respStatus.Text = "Auth error: $($auth.error)"
             return
         }
-        $Ctx.respReqBox.Text = Format-PPRequestPreview $m.method $url $headers $auth.headers $m.bodyType $body $formRows
+        $Ctx.respReqBox.Text = Format-PPRequestPreview $m.method $url $headers $auth.headers $m.bodyType $body $formRows $mpRows
         $resp = Invoke-PPRequest -Method $m.method -Url $url -Headers $headers `
-            -AuthHeaders $auth.headers -BodyType $m.bodyType -Body $body -Form $formRows -TimeoutSec $timeout
+            -AuthHeaders $auth.headers -BodyType $m.bodyType -Body $body -Form $formRows -Multipart $mpRows -TimeoutSec $timeout
         Show-PPResponse $Ctx $resp
     } finally {
         $form.Cursor = $oldCursor

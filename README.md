@@ -41,6 +41,8 @@ product.
   current tab into a collection, double-click a saved request to open it in a new tab, and
   right-click to rename, duplicate, or delete. See [Collections](#collections).
 - **Methods** — GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS.
+- **File uploads** — the `Multipart form-data` body lets you mix text fields and files; pick a
+  file per row with the **...** button. Sent as `multipart/form-data` via `HttpClient`.
 - **cURL import / export** — paste a cURL command (toolbar **Import cURL**) to build a request in
   a new tab, or right-click a tab → **Copy as cURL** / **Copy as PowerShell** to copy a runnable
   snippet of the current request. See [Import & export](#import--export).
@@ -50,8 +52,8 @@ product.
   resolved values). See [Environments](#environments).
 - **Params / Headers** — enable/disable individual rows; params are merged into the query
   string at send time.
-- **Body** — `No body`, `JSON`, `Text`, or `Form URL-encoded` (sets the right
-  `Content-Type` automatically).
+- **Body** — `No body`, `JSON`, `Text`, `Form URL-encoded`, or `Multipart form-data`
+  (text **and file** fields, for uploads) — the right `Content-Type` is set automatically.
 - **Auth**
   - **None**
   - **Bearer / JWT** — paste a token, sent as `Authorization: Bearer <token>`.
@@ -138,12 +140,14 @@ else. **Note:** variable values are stored in plaintext — see [Security](#secu
 ### Import & export
 
 - **Import cURL** (toolbar) — paste a cURL command and PowerPost parses it into a new tab:
-  method, URL, headers, body (JSON / form / text), and `-u` or `Authorization: Bearer`/`Basic`
-  headers become the request's auth. Common no-op flags (`-k`, `-L`, `-s`, …) are ignored.
+  method, URL, headers, body (JSON / form / text, or `-F` → multipart with file fields), and
+  `-u` or `Authorization: Bearer`/`Basic` headers become the request's auth. Common no-op flags
+  (`-k`, `-L`, `-s`, …) are ignored.
 - **Copy as cURL** / **Copy as PowerShell** (right-click a tab) — copies the current request to
   the clipboard as a bash-style `curl` command or an `Invoke-RestMethod` script. `{{variables}}`
   are resolved against the active environment first, so the snippet is runnable as-is. (For OAuth
-  auth, the snippet includes a token only if one has already been fetched.)
+  auth, the snippet includes a token only if one has already been fetched. Multipart/file bodies
+  export to `curl -F`; the PowerShell snippet notes them rather than inlining file uploads.)
 
 ## OAuth notes
 
@@ -200,7 +204,7 @@ Planned features to bring MCS PowerPost closer to Postman, roughly in priority o
   switchable environments.
 - ~~**Collections**~~ — ✅ shipped: a saved-request sidebar tree alongside the tabs.
 - ~~**cURL import / export**~~ — ✅ shipped: paste cURL to build a request; copy as cURL or PowerShell.
-- **multipart/form-data** — file-upload request bodies.
+- ~~**multipart/form-data**~~ — ✅ shipped: text + file-upload request bodies.
 - **Request history** — recent sends with one-click reload.
 - **Response search** — find within large response bodies.
 - **Settings UI** — timeout, follow-redirects, and proxy controls.

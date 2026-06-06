@@ -72,6 +72,14 @@ Key design points to preserve:
   `ok`/`error` rather than throwing; callers branch on `.ok`. Content-type headers must be set
   on the content object, not the request (see the `^Content-` handling).
 
+- **Body types** (`bodyType`): `none|json|text|form|multipart`. `form`/`multipart` use row lists
+  (`form` = `New-PPKv`; `multipart` = `New-PPMultipartRow` with `kind=text|file`, `value` holding
+  the text or file path). `Http.ps1` builds `multipart/form-data` via `MultipartFormDataContent`
+  (`ByteArrayContent` for files, read at send time — a missing file `throw`s and surfaces as the
+  request error). The Body tab swaps `bodyBox`/`formGrid`/`multipartGrid` in `Update-PPBodyCard`;
+  the multipart grid (`New-PPMultipartGrid`) has a Type combo + a `...` file-picker button. cURL
+  import maps `-F` to multipart rows; export emits `curl -F` (PowerShell export only notes them).
+
 - **Cert validation is a compiled C# class** (`PPCertPolicy` in `PowerPost.ps1`), not a
   PowerShell scriptblock: the callback fires on a background thread with no runspace where a
   scriptblock would throw and break every HTTPS request. The "Ignore SSL errors" toggle flips

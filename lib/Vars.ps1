@@ -55,6 +55,22 @@ function Expand-PPKvList {
     return , $list
 }
 
+# Expand {{name}} in multipart rows (key + value/path), preserving enabled state and kind.
+function Expand-PPMultipartList {
+    param($Rows, $Map)
+    $list = @()
+    foreach ($r in @($Rows)) {
+        if ($null -eq $r) { continue }
+        $list += @{
+            enabled = [bool]$r.enabled
+            key     = (Expand-PPVars ([string]$r.key) $Map)
+            kind    = [string]$r.kind
+            value   = (Expand-PPVars ([string]$r.value) $Map)
+        }
+    }
+    return , $list
+}
+
 # Return a copy of an auth hashtable with its string fields variable-expanded.
 # Cached-token fields (accessToken/tokenExpiry) are copied verbatim so the caller can
 # carry a freshly fetched token back to the persisted model.

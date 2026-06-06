@@ -87,11 +87,14 @@ function Invoke-PPSelfTest {
         $reqRt.method = 'POST'; $reqRt.url = 'https://example.com/ping'
         $colRt.requests = @($reqRt)
         $s.collections = @($colRt)
+        $s.tabs[0].bodyType = 'multipart'
+        $s.tabs[0].multipart = @( (New-PPMultipartRow $true 'avatar' 'file' 'C:\pics\me.png'), (New-PPMultipartRow $true 'note' 'text' 'hi') )
         Save-PPState $s $tmp | Out-Null
         $loaded = Load-PPState $tmp
         Check 'state round-trip' (($loaded.tabs.Count -eq 2) -and ($loaded.tabs[0].url -eq 'https://example.com/x') -and ($loaded.tabs[1].name -eq 'Second')) "tabs=$($loaded.tabs.Count)"
         Check 'env round-trip' (($loaded.environments.Count -eq 1) -and ($loaded.activeEnv -eq 'Dev') -and ($loaded.environments[0].variables[0].value -eq 'dev.example.com')) "envs=$($loaded.environments.Count) active=$($loaded.activeEnv)"
         Check 'collection round-trip' (($loaded.collections.Count -eq 1) -and ($loaded.collections[0].name -eq 'Smoke') -and ($loaded.collections[0].requests[0].method -eq 'POST') -and ($loaded.collections[0].requests[0].url -eq 'https://example.com/ping')) "cols=$($loaded.collections.Count)"
+        Check 'multipart round-trip' (($loaded.tabs[0].bodyType -eq 'multipart') -and ($loaded.tabs[0].multipart.Count -eq 2) -and ($loaded.tabs[0].multipart[0].kind -eq 'file') -and ($loaded.tabs[0].multipart[0].value -eq 'C:\pics\me.png')) "mp=$($loaded.tabs[0].multipart.Count)"
     } finally { Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue }
 
     # 2. JSON formatter
@@ -131,7 +134,14 @@ curl -X POST 'https://api.test/v1/users?team=eng' -H 'Accept: application/json' 
     $ps = ConvertTo-PPPowerShell $cm @{}
     Check 'powershell export' (($ps -match 'Invoke-RestMethod') -and ($ps -match "-Method POST") -and ($ps -match "ContentType 'application/json'")) 'ps export missing parts'
 
-    # 6. live HTTP (needs network; reported as FAIL if unreachable)
+    # 6. multipart cURL import / export
+    $mpCurl = ConvertFrom-PPCurl "curl 'https://api.test/upload' -F 'photo=@C:\a\b.png;type=image/png' -F 'name=Sam'"
+    $mpFile = @($mpCurl.multipart | Where-Object { $_.kind -eq 'file' })
+    Check 'curl -F import' (($mpCurl.bodyType -eq 'multipart') -and ($mpCurl.method -eq 'POST') -and ($mpFile.Count -eq 1) -and ($mpFile[0].value -eq 'C:\a\b.png')) "bt=$($mpCurl.bodyType) parts=$($mpCurl.multipart.Count)"
+    $mpOut = ConvertTo-PPCurl $mpCurl @{}
+    Check 'curl -F export' (($mpOut -match '-F ') -and ($mpOut -match 'photo=@C:\\a\\b\.png') -and ($mpOut -match 'name=Sam')) 'multipart export missing -F'
+
+    # 7. live HTTP (needs network; reported as FAIL if unreachable)
     try {
         $g = Invoke-PPRequest -Method 'GET' -Url 'https://postman-echo.com/get?ping=1' -TimeoutSec 30
         Check 'HTTP GET 200' ($g.ok -and $g.statusCode -eq 200) "ok=$($g.ok) code=$($g.statusCode) err=$($g.error)"
@@ -141,6 +151,12 @@ curl -X POST 'https://api.test/v1/users?team=eng' -H 'Accept: application/json' 
         $echoed = $false
         if ($p.ok) { try { $echoed = (($p.body | ConvertFrom-Json).json.hello -eq 'world') } catch { } }
         Check 'HTTP POST echo' $echoed "ok=$($p.ok) code=$($p.statusCode)"
+
+        $mp = @( @{ enabled = $true; key = 'hello'; kind = 'text'; value = 'world' } )
+        $pm = Invoke-PPRequest -Method 'POST' -Url 'https://postman-echo.com/post' -BodyType 'multipart' -Multipart $mp -TimeoutSec 30
+        $mpEchoed = $false
+        if ($pm.ok) { try { $mpEchoed = (($pm.body | ConvertFrom-Json).form.hello -eq 'world') } catch { } }
+        Check 'HTTP multipart POST' $mpEchoed "ok=$($pm.ok) code=$($pm.statusCode)"
     } catch {
         Check 'HTTP live' $false $_.Exception.Message
     }

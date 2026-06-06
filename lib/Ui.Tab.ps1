@@ -1,7 +1,7 @@
 # Ui.Tab.ps1 — build one request tab (editor + response), sync it to the model, send.
 
-$script:PPBodyTypeToText = @{ none = 'No body'; json = 'JSON'; text = 'Text'; form = 'Form URL-encoded' }
-$script:PPBodyTextToType = @{ 'No body' = 'none'; 'JSON' = 'json'; 'Text' = 'text'; 'Form URL-encoded' = 'form' }
+$script:PPBodyTypeToText = @{ none = 'No body'; json = 'JSON'; text = 'Text'; form = 'Form URL-encoded'; multipart = 'Multipart form-data' }
+$script:PPBodyTextToType = @{ 'No body' = 'none'; 'JSON' = 'json'; 'Text' = 'text'; 'Form URL-encoded' = 'form'; 'Multipart form-data' = 'multipart' }
 $script:PPMethods = @('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')
 
 function New-PPReadGrid {
@@ -63,10 +63,10 @@ function New-PPRequestTab {
 
     $pgBody = New-Object System.Windows.Forms.TabPage; $pgBody.Text = 'Body'; $pgBody.UseVisualStyleBackColor = $true
     $bodyTypeCombo = New-Object System.Windows.Forms.ComboBox; $bodyTypeCombo.DropDownStyle = 'DropDownList'; $bodyTypeCombo.Dock = 'Top'
-    [void]$bodyTypeCombo.Items.AddRange(@('No body', 'JSON', 'Text', 'Form URL-encoded'))
+    [void]$bodyTypeCombo.Items.AddRange(@('No body', 'JSON', 'Text', 'Form URL-encoded', 'Multipart form-data'))
     $bodyCards = New-Object System.Windows.Forms.Panel; $bodyCards.Dock = 'Fill'
-    $bodyBox = New-PPMultiline; $formGrid = New-PPKvGrid
-    $bodyCards.Controls.Add($bodyBox); $bodyCards.Controls.Add($formGrid)
+    $bodyBox = New-PPMultiline; $formGrid = New-PPKvGrid; $multipartGrid = New-PPMultipartGrid
+    $bodyCards.Controls.Add($bodyBox); $bodyCards.Controls.Add($formGrid); $bodyCards.Controls.Add($multipartGrid)
     $pgBody.Controls.Add($bodyCards); $pgBody.Controls.Add($bodyTypeCombo)
 
     $pgAuth = New-Object System.Windows.Forms.TabPage; $pgAuth.Text = 'Auth'; $pgAuth.UseVisualStyleBackColor = $true
@@ -111,7 +111,7 @@ function New-PPRequestTab {
     # ---------- stash refs ----------
     $ctx.methodCombo = $methodCombo; $ctx.urlBox = $urlBox; $ctx.sendBtn = $sendBtn
     $ctx.paramsGrid = $paramsGrid; $ctx.headersGrid = $headersGrid
-    $ctx.bodyTypeCombo = $bodyTypeCombo; $ctx.bodyBox = $bodyBox; $ctx.formGrid = $formGrid
+    $ctx.bodyTypeCombo = $bodyTypeCombo; $ctx.bodyBox = $bodyBox; $ctx.formGrid = $formGrid; $ctx.multipartGrid = $multipartGrid
     $ctx.auth = $authBuilt
     $ctx.respStatus = $respStatus; $ctx.respBodyBox = $respBodyBox; $ctx.respRawBox = $respRawBox; $ctx.respHeadGrid = $respHeadGrid; $ctx.respReqBox = $respReqBox
     $ctx.split = $split
@@ -169,6 +169,7 @@ function Set-PPControlsFromModel {
     $Ctx.bodyTypeCombo.SelectedItem = $script:PPBodyTypeToText[$m.bodyType]
     $Ctx.bodyBox.Text = $m.body
     Set-PPKvGrid $Ctx.formGrid $m.form
+    Set-PPMultipartGrid $Ctx.multipartGrid $m.multipart
 
     $r = $Ctx.auth.refs; $a = $m.auth
     $r.typeCombo.SelectedItem = $script:PPAuthTypeToText[$a.type]
@@ -197,6 +198,7 @@ function Sync-PPTabToModel {
     $m.bodyType = $script:PPBodyTextToType[[string]$Ctx.bodyTypeCombo.SelectedItem]
     $m.body = $Ctx.bodyBox.Text
     $m.form = Get-PPKvGrid $Ctx.formGrid
+    $m.multipart = Get-PPMultipartGrid $Ctx.multipartGrid
     Sync-PPAuthToModel $Ctx
     $Ctx.page.Text = $m.name
 }
@@ -228,6 +230,8 @@ function Update-PPBodyCard {
     $showText = ($type -eq 'json' -or $type -eq 'text')
     $Ctx.bodyBox.Visible = $showText
     $Ctx.formGrid.Visible = ($type -eq 'form')
+    $Ctx.multipartGrid.Visible = ($type -eq 'multipart')
     if ($showText) { $Ctx.bodyBox.BringToFront() }
     elseif ($type -eq 'form') { $Ctx.formGrid.BringToFront() }
+    elseif ($type -eq 'multipart') { $Ctx.multipartGrid.BringToFront() }
 }

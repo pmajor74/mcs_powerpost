@@ -51,6 +51,79 @@ function Get-PPKvGrid {
     return , $list
 }
 
+# --- multipart/form-data grid (text or file fields) ---
+
+function New-PPMultipartGrid {
+    $g = New-Object System.Windows.Forms.DataGridView
+    $g.Dock = 'Fill'
+    $g.AllowUserToAddRows = $true
+    $g.AllowUserToResizeRows = $false
+    $g.RowHeadersVisible = $false
+    $g.AutoSizeColumnsMode = 'Fill'
+    $g.SelectionMode = 'CellSelect'
+    $g.EditMode = 'EditOnKeystrokeOrF2'
+    $g.BackgroundColor = [System.Drawing.SystemColors]::Window
+
+    $colEnabled = New-Object System.Windows.Forms.DataGridViewCheckBoxColumn
+    $colEnabled.HeaderText = 'On'; $colEnabled.FillWeight = 8; $colEnabled.Name = 'Enabled'
+    $colKey = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colKey.HeaderText = 'Key'; $colKey.FillWeight = 26; $colKey.Name = 'Key'
+    $colType = New-Object System.Windows.Forms.DataGridViewComboBoxColumn
+    $colType.HeaderText = 'Type'; $colType.FillWeight = 16; $colType.Name = 'Type'; $colType.FlatStyle = 'Flat'
+    [void]$colType.Items.AddRange(@('Text', 'File'))
+    $colVal = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colVal.HeaderText = 'Value / File path'; $colVal.FillWeight = 42; $colVal.Name = 'Value'
+    $colBrowse = New-Object System.Windows.Forms.DataGridViewButtonColumn
+    $colBrowse.HeaderText = ''; $colBrowse.FillWeight = 8; $colBrowse.Name = 'Browse'
+    $colBrowse.Text = '...'; $colBrowse.UseColumnTextForButtonValue = $true
+
+    [void]$g.Columns.Add($colEnabled)
+    [void]$g.Columns.Add($colKey)
+    [void]$g.Columns.Add($colType)
+    [void]$g.Columns.Add($colVal)
+    [void]$g.Columns.Add($colBrowse)
+
+    # Combo cells raise DataError noise for empty/new rows — ignore it.
+    $g.Add_DataError({})
+    # The "..." button opens a file picker and flips the row to a File field.
+    $g.Add_CellContentClick({
+        if ($_.RowIndex -lt 0) { return }
+        if ($this.Columns[$_.ColumnIndex].Name -ne 'Browse') { return }
+        $ofd = New-Object System.Windows.Forms.OpenFileDialog
+        if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+            $this.Rows[$_.RowIndex].Cells['Value'].Value = $ofd.FileName
+            $this.Rows[$_.RowIndex].Cells['Type'].Value = 'File'
+        }
+    })
+    return $g
+}
+
+function Set-PPMultipartGrid {
+    param($Grid, $Rows)
+    $Grid.Rows.Clear()
+    foreach ($r in @($Rows)) {
+        if ($null -eq $r) { continue }
+        $type = if ($r.kind -eq 'file') { 'File' } else { 'Text' }
+        [void]$Grid.Rows.Add([bool]$r.enabled, [string]$r.key, $type, [string]$r.value)
+    }
+}
+
+function Get-PPMultipartGrid {
+    param($Grid)
+    $list = @()
+    foreach ($row in $Grid.Rows) {
+        if ($row.IsNewRow) { continue }
+        $k = [string]$row.Cells['Key'].Value
+        $v = [string]$row.Cells['Value'].Value
+        if ([string]::IsNullOrEmpty($k) -and [string]::IsNullOrEmpty($v)) { continue }
+        $eCell = $row.Cells['Enabled'].Value
+        $e = if ($null -eq $eCell) { $true } else { [bool]$eCell }
+        $kind = if (([string]$row.Cells['Type'].Value) -eq 'File') { 'file' } else { 'text' }
+        $list += @{ enabled = $e; key = $k; kind = $kind; value = $v }
+    }
+    return , $list
+}
+
 # --- labeled-field tables for the auth panels ---
 
 function New-PPFieldTable {
