@@ -61,7 +61,7 @@ if (-not $SelfTest) {
 
 # Load the library (order: leaf dependencies first).
 $libFiles = @('Model.ps1', 'Json.ps1', 'State.ps1', 'Http.ps1', 'Auth.ps1', 'Vars.ps1')
-if (-not $SelfTest) { $libFiles += @('Ui.Controls.ps1', 'Ui.Env.ps1', 'Ui.Tab.ps1', 'Ui.Send.ps1', 'Ui.Main.ps1') }
+if (-not $SelfTest) { $libFiles += @('Ui.Controls.ps1', 'Ui.Env.ps1', 'Ui.Collections.ps1', 'Ui.Tab.ps1', 'Ui.Send.ps1', 'Ui.Main.ps1') }
 foreach ($f in $libFiles) { . (Join-Path $PSScriptRoot "lib\$f") }
 
 function Invoke-PPSelfTest {
@@ -82,10 +82,16 @@ function Invoke-PPSelfTest {
         $envRt.variables = @( (New-PPKv $true 'host' 'dev.example.com') )
         $s.environments = @($envRt)
         $s.activeEnv = 'Dev'
+        $colRt = New-PPCollection 'Smoke'
+        $reqRt = New-PPTab 'Ping'
+        $reqRt.method = 'POST'; $reqRt.url = 'https://example.com/ping'
+        $colRt.requests = @($reqRt)
+        $s.collections = @($colRt)
         Save-PPState $s $tmp | Out-Null
         $loaded = Load-PPState $tmp
         Check 'state round-trip' (($loaded.tabs.Count -eq 2) -and ($loaded.tabs[0].url -eq 'https://example.com/x') -and ($loaded.tabs[1].name -eq 'Second')) "tabs=$($loaded.tabs.Count)"
         Check 'env round-trip' (($loaded.environments.Count -eq 1) -and ($loaded.activeEnv -eq 'Dev') -and ($loaded.environments[0].variables[0].value -eq 'dev.example.com')) "envs=$($loaded.environments.Count) active=$($loaded.activeEnv)"
+        Check 'collection round-trip' (($loaded.collections.Count -eq 1) -and ($loaded.collections[0].name -eq 'Smoke') -and ($loaded.collections[0].requests[0].method -eq 'POST') -and ($loaded.collections[0].requests[0].url -eq 'https://example.com/ping')) "cols=$($loaded.collections.Count)"
     } finally { Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue }
 
     # 2. JSON formatter

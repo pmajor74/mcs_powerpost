@@ -21,6 +21,7 @@ product.
 - [Getting started](#getting-started)
 - [Usage](#usage)
   - [Keyboard shortcuts](#keyboard-shortcuts)
+  - [Collections](#collections)
   - [Environments](#environments)
 - [OAuth notes](#oauth-notes)
 - [Security](#security)
@@ -32,9 +33,12 @@ product.
 
 ## Features
 
-- **Tabs** — each tab is a saved request (method, URL, params, headers, body). Rename by
+- **Tabs** — each tab is an open request (method, URL, params, headers, body). Rename by
   double-clicking the tab header or right-click → Rename; Duplicate and Close from the
   toolbar or right-click menu.
+- **Collections** — a left sidebar tree of saved requests grouped into collections. Save the
+  current tab into a collection, double-click a saved request to open it in a new tab, and
+  right-click to rename, duplicate, or delete. See [Collections](#collections).
 - **Methods** — GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS.
 - **Environments & variables** — define named environments of `{{variable}}` values and switch
   between them from the toolbar. Tokens like `{{baseUrl}}` / `{{token}}` are substituted into the
@@ -91,6 +95,21 @@ body, response headers, and the exact request that was sent.
 | `Ctrl+T` | New tab |
 | `Ctrl+W` | Close tab |
 | `Ctrl+S` | Save state |
+
+### Collections
+
+Tabs are your working set; **collections** are your saved library. Use the sidebar on the left:
+
+1. Click **+ Collection** (or right-click → New Collection) and name it.
+2. With a collection (or one of its requests) selected, click **Save Request** to store a
+   snapshot of the current tab into it — or right-click a collection → **Add Current Request Here**.
+3. **Double-click** a saved request to open it in a new tab. It opens as a *copy*, so editing the
+   tab doesn't change the saved request until you save again.
+4. Right-click any node to **Rename**, **Duplicate** (requests), or **Delete**.
+
+Collections are saved in `powerpost.state.json` alongside your open tabs, so your library persists
+between sessions. Saved requests use the same format as tabs, so everything — params, headers,
+body, auth, and `{{variables}}` — is preserved.
 
 ### Environments
 
@@ -151,6 +170,7 @@ lib\Auth.ps1         auth headers + OAuth2 token acquisition (client-creds, auth
 lib\Vars.ps1         {{variable}} substitution (environments)
 lib\Ui.Controls.ps1  reusable WinForms builders (grids, fields, auth panel)
 lib\Ui.Env.ps1       environment selector + manager dialog
+lib\Ui.Collections.ps1  collections sidebar (tree of saved requests) + commands
 lib\Ui.Tab.ps1       per-tab editor + response panel + model<->controls sync
 lib\Ui.Send.ps1      send, render response, fetch tokens, save response
 lib\Ui.Main.ps1      main window, toolbar, tab management, save/close, About
@@ -162,7 +182,7 @@ Planned features to bring MCS PowerPost closer to Postman, roughly in priority o
 
 - ~~**Environments & variables**~~ — ✅ shipped: `{{baseUrl}}` / `{{token}}` substitution with
   switchable environments.
-- **Collections** — a saved-request sidebar tree instead of flat tabs only.
+- ~~**Collections**~~ — ✅ shipped: a saved-request sidebar tree alongside the tabs.
 - **cURL import / export** — paste a cURL command to build a request; copy as cURL or PowerShell.
 - **multipart/form-data** — file-upload request bodies.
 - **Request history** — recent sends with one-click reload.

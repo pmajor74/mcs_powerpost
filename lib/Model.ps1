@@ -59,6 +59,12 @@ function New-PPEnvironment {
     return @{ name = $Name; variables = @() }   # variables: rows from New-PPKv
 }
 
+# A collection is a named, saved group of requests (each request is a New-PPTab-shaped model).
+function New-PPCollection {
+    param([string]$Name = 'New Collection')
+    return @{ name = $Name; requests = @() }
+}
+
 function New-PPState {
     return @{
         version      = 1
@@ -69,6 +75,7 @@ function New-PPState {
         tabs         = @((New-PPTab))
         environments = @()              # list of New-PPEnvironment
         activeEnv    = ''               # name of the active environment; '' = none
+        collections  = @()              # list of New-PPCollection (saved request library)
     }
 }
 
@@ -136,6 +143,17 @@ function Resolve-PPEnvironment {
     return $e
 }
 
+function Resolve-PPCollection {
+    param($Raw)
+    $c = New-PPCollection
+    if ($null -eq $Raw) { return $c }
+    $c.name = [string](Get-PPProp $Raw 'name' 'New Collection')
+    $reqs = @()
+    foreach ($rr in @(Get-PPProp $Raw 'requests' @())) { $reqs += (Resolve-PPTab $rr) }
+    $c.requests = $reqs
+    return $c
+}
+
 function Resolve-PPState {
     param($Raw)
     $s = New-PPState
@@ -166,5 +184,9 @@ function Resolve-PPState {
     $s.environments = $envs
     # Drop a stale active-env reference that no longer matches any environment.
     if ($s.activeEnv -and (@($envs | ForEach-Object { $_.name }) -notcontains $s.activeEnv)) { $s.activeEnv = '' }
+
+    $cols = @()
+    foreach ($rc in @(Get-PPProp $Raw 'collections' @())) { $cols += (Resolve-PPCollection $rc) }
+    $s.collections = $cols
     return $s
 }

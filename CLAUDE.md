@@ -42,10 +42,11 @@ skipped, so keep those free of WinForms dependencies.
 
 Layered, leaf-first load order (`PowerPost.ps1`):
 `Model → Json → State → Http → Auth → Vars` then
-`Ui.Controls → Ui.Env → Ui.Tab → Ui.Send → Ui.Main`.
+`Ui.Controls → Ui.Env → Ui.Collections → Ui.Tab → Ui.Send → Ui.Main`.
 Dependencies only point downward; don't introduce upward calls. `Vars.ps1` holds the
 UI-free `{{variable}}` substitution (`Expand-PPVars`, `Get-PPVarMap`, `Expand-PPKvList`,
-`Expand-PPAuth`); `Ui.Env.ps1` is the environment selector + manager dialog.
+`Expand-PPAuth`); `Ui.Env.ps1` is the environment selector + manager dialog;
+`Ui.Collections.ps1` is the saved-request sidebar.
 
 Key design points to preserve:
 
@@ -87,6 +88,17 @@ Key design points to preserve:
   the literal `{{...}}` text; a freshly fetched OAuth token is copied back from the expanded
   auth clone onto `$Ctx.model.auth`. The manager dialog edits a deep copy and only commits to
   `state.environments` on OK. Keep substitution UI-free (in `Vars.ps1`) so `-SelfTest` covers it.
+
+- **Collections** (`Ui.Collections.ps1`): a left sidebar `TreeView` of `state.collections`
+  (each = `@{ name; requests = @() }`, where a request is a `New-PPTab`-shaped model). Tabs are
+  the editing surface; collections are the saved library. `Build-PPTree` rebuilds the whole tree
+  from state after every mutation (collections are small — simpler than node/model sync). Tree
+  nodes carry a `Tag = @{ kind; col; req }` referencing the actual state hashtables, so renames
+  mutate in place and deletes filter by `[object]::ReferenceEquals`. Saving/opening uses
+  `Copy-PPTab` (deep copy) so the open tab and the saved request stay independent. Like the env
+  manager, all handlers read `$Global:PPApp` (e.g. `$Global:PPApp.tree.SelectedNode`) rather than
+  captured locals. `Build-PPStateFromUi` leaves `collections`/`environments`/`activeEnv` untouched,
+  so they persist across the autosave-on-close.
 
 - **Persistence** (`State.ps1`): state saves to `powerpost.state.json` next to the script on
   Ctrl+S and on window close (`Add_FormClosing`). Corrupt files are backed up to `.bak` and a

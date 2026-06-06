@@ -198,19 +198,29 @@ function Start-PowerPost {
     $tabControl = New-Object System.Windows.Forms.TabControl
     $tabControl.Dock = 'Fill'
 
+    # collections sidebar + splitter (left of the tabs)
+    $side = Build-PPCollectionsSidebar
+    $splitter = New-Object System.Windows.Forms.Splitter
+    $splitter.Dock = 'Left'; $splitter.Width = 4
+
     # status bar
     $statusStrip = New-Object System.Windows.Forms.StatusStrip
     $statusLabel = New-Object System.Windows.Forms.ToolStripStatusLabel
     $statusLabel.Text = 'Ready'
     [void]$statusStrip.Items.Add($statusLabel)
 
+    # Dock order matters: last-added docks first. Add Fill content first, then the left
+    # sidebar + splitter, then toolbar/status last so they span the full width.
     $form.Controls.Add($tabControl)
+    $form.Controls.Add($splitter)
+    $form.Controls.Add($side.panel)
     $form.Controls.Add($toolbar)
     $form.Controls.Add($statusStrip)
 
     $Global:PPApp = @{
         form = $form; tabControl = $tabControl; state = $State
         ignoreSslCheck = $chkSsl; statusLabel = $statusLabel; envCombo = $envCombo
+        tree = $side.tree
     }
     $Global:PPIgnoreSsl = [bool]$State.ignoreSsl
     [PPCertPolicy]::IgnoreErrors = [bool]$State.ignoreSsl
@@ -231,6 +241,9 @@ function Start-PowerPost {
     $idx = [int]$State.activeTab
     if ($idx -ge 0 -and $idx -lt $tabControl.TabPages.Count) { $tabControl.SelectedIndex = $idx }
 
+    # build collections sidebar from state
+    Build-PPTree
+
     # events
     $btnNew.Add_Click({ New-PPTabCmd })
     $btnDup.Add_Click({ Copy-PPTabCmd })
@@ -245,6 +258,10 @@ function Start-PowerPost {
     $btnEnv.Add_Click({
         if (Show-PPEnvManager) { Update-PPEnvCombo $Global:PPApp.envCombo $Global:PPApp.state }
     })
+    $side.btnNewCol.Add_Click({ New-PPCollectionCmd })
+    $side.btnSaveReq.Add_Click({ Save-PPRequestToCollectionCmd })
+    $side.tree.Add_NodeMouseClick({ if ($_.Button -eq 'Right') { $this.SelectedNode = $_.Node } })
+    $side.tree.Add_NodeMouseDoubleClick({ Open-PPRequestCmd })
     $chkSsl.Add_CheckedChanged({
         $Global:PPIgnoreSsl = [bool]$this.Checked
         [PPCertPolicy]::IgnoreErrors = [bool]$this.Checked
