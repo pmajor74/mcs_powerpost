@@ -175,6 +175,7 @@ function Start-PowerPost {
     $btnSave = New-PPToolbarButton 'Save'
     $btnAbout = New-PPToolbarButton 'About'
     $btnImport = New-PPToolbarButton 'Import cURL'; $btnImport.Width = 100
+    $btnLlm  = New-PPToolbarButton 'LLM Playground'; $btnLlm.Width = 118
     $btnEnv  = New-PPToolbarButton 'Environments'; $btnEnv.Width = 104
     $envCombo = New-Object System.Windows.Forms.ComboBox
     $envCombo.DropDownStyle = 'DropDownList'; $envCombo.Dock = 'Left'; $envCombo.Width = 170
@@ -188,6 +189,7 @@ function Start-PowerPost {
     # and About ends up rightmost.
     $toolbar.Controls.Add($btnAbout)
     $toolbar.Controls.Add($chkSsl)
+    $toolbar.Controls.Add($btnLlm)
     $toolbar.Controls.Add($btnEnv)
     $toolbar.Controls.Add($envCombo)
     $toolbar.Controls.Add($btnImport)
@@ -258,6 +260,7 @@ function Start-PowerPost {
     $btnSave.Add_Click({ Save-PPAll })
     $btnAbout.Add_Click({ Show-PPAbout })
     $btnImport.Add_Click({ Show-PPImportCurl })
+    $btnLlm.Add_Click({ Show-PPLlmPlayground })
     $envCombo.Add_SelectedIndexChanged({
         $idx = $this.SelectedIndex
         if ($idx -le 0) { $Global:PPApp.state.activeEnv = '' }

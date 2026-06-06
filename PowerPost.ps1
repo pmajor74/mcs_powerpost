@@ -30,6 +30,8 @@ $Global:PPRoot = $PSScriptRoot
 $Global:PPIgnoreSsl = $false
 
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+# Avoid "Expect: 100-continue" — large POSTs can otherwise draw an HTTP 417 from some servers.
+[System.Net.ServicePointManager]::Expect100Continue = $false
 
 # Cert validation must be a COMPILED callback, not a PowerShell scriptblock: the callback
 # fires on a background thread with no runspace, and a scriptblock there throws and breaks
@@ -60,8 +62,8 @@ if (-not $SelfTest) {
 }
 
 # Load the library (order: leaf dependencies first).
-$libFiles = @('Model.ps1', 'Json.ps1', 'State.ps1', 'Http.ps1', 'Auth.ps1', 'Vars.ps1', 'Curl.ps1')
-if (-not $SelfTest) { $libFiles += @('Ui.Controls.ps1', 'Ui.Env.ps1', 'Ui.Collections.ps1', 'Ui.Code.ps1', 'Ui.Tab.ps1', 'Ui.Send.ps1', 'Ui.Main.ps1') }
+$libFiles = @('Model.ps1', 'Json.ps1', 'State.ps1', 'Http.ps1', 'Auth.ps1', 'Vars.ps1', 'Curl.ps1', 'Llm.ps1')
+if (-not $SelfTest) { $libFiles += @('Ui.Controls.ps1', 'Ui.Env.ps1', 'Ui.Collections.ps1', 'Ui.Code.ps1', 'Ui.Llm.ps1', 'Ui.Tab.ps1', 'Ui.Send.ps1', 'Ui.Main.ps1') }
 foreach ($f in $libFiles) { . (Join-Path $PSScriptRoot "lib\$f") }
 
 function Invoke-PPSelfTest {
@@ -141,7 +143,81 @@ curl -X POST 'https://api.test/v1/users?team=eng' -H 'Accept: application/json' 
     $mpOut = ConvertTo-PPCurl $mpCurl @{}
     Check 'curl -F export' (($mpOut -match '-F ') -and ($mpOut -match 'photo=@C:\\a\\b\.png') -and ($mpOut -match 'name=Sam')) 'multipart export missing -F'
 
-    # 7. live HTTP (needs network; reported as FAIL if unreachable)
+    # 7. LLM adapters (pure; no network)
+    $llmMsgs = @( @{ role = 'user'; text = 'hi'; images = @() } )
+    $oai = Build-PPLlmBody 'openai' 'gpt-4o' 'You are terse.' $llmMsgs @{ maxTokens = 256 }
+    Check 'llm openai body' (($oai.urlSuffix -eq '/chat/completions') -and ($oai.body -match '"model"\s*:\s*"gpt-4o"') -and ($oai.body -match 'terse')) "suffix=$($oai.urlSuffix)"
+    $ant = Build-PPLlmBody 'anthropic' 'claude-opus-4-8' 'sys' $llmMsgs @{}
+    Check 'llm anthropic body' (($ant.urlSuffix -eq '/messages') -and ($ant.body -match 'max_tokens') -and ($ant.body -match 'claude-opus-4-8')) "suffix=$($ant.urlSuffix)"
+    $gem = Build-PPLlmBody 'gemini' 'gemini-2.0-flash' '' $llmMsgs @{}
+    Check 'llm gemini body' (($gem.urlSuffix -eq '/models/gemini-2.0-flash:generateContent') -and ($gem.body -match 'contents')) "suffix=$($gem.urlSuffix)"
+
+    $pBear = New-PPLlmProvider 'P' 'openai' 'bearer' 'https://x' 'gpt-4o' @() 'KEY123'
+    $hb = Resolve-PPLlmAuthHeaders $pBear
+    $authVal = (@($hb.headers | Where-Object { $_.key -eq 'Authorization' })[0]).value
+    Check 'llm auth bearer' ($hb.ok -and ($authVal -eq 'Bearer KEY123')) "val=$authVal"
+    $pAnt = New-PPLlmProvider 'A' 'anthropic' 'anthropic' 'https://x' 'm' @() 'AK'
+    $ha = Resolve-PPLlmAuthHeaders $pAnt
+    $hasVer = @($ha.headers | Where-Object { $_.key -eq 'anthropic-version' }).Count -eq 1
+    $hasKey = (@($ha.headers | Where-Object { $_.key -eq 'x-api-key' })[0]).value -eq 'AK'
+    Check 'llm auth anthropic' ($hasVer -and $hasKey) "ver=$hasVer key=$hasKey"
+
+    $sample = '{"choices":[{"message":{"content":"hello world"}}],"usage":{"prompt_tokens":3,"completion_tokens":2}}'
+    $ro = Read-PPLlmResponse 'openai' @{ ok = $true; statusCode = 200; body = $sample }
+    Check 'llm parse openai' ($ro.ok -and ($ro.text -eq 'hello world')) "text=$($ro.text)"
+    $asample = '{"content":[{"type":"text","text":"hi there"}],"usage":{"input_tokens":4,"output_tokens":2}}'
+    $ra = Read-PPLlmResponse 'anthropic' @{ ok = $true; statusCode = 200; body = $asample }
+    Check 'llm parse anthropic' ($ra.ok -and ($ra.text -eq 'hi there')) "text=$($ra.text)"
+    $gsample = '{"candidates":[{"content":{"parts":[{"text":"gem out"}]}}]}'
+    $rg = Read-PPLlmResponse 'gemini' @{ ok = $true; statusCode = 200; body = $gsample }
+    Check 'llm parse gemini' ($rg.ok -and ($rg.text -eq 'gem out')) "text=$($rg.text)"
+    $rerr = Read-PPLlmResponse 'openai' @{ ok = $true; statusCode = 401; body = '{"error":"bad key"}' }
+    Check 'llm parse error' (-not $rerr.ok) "ok=$($rerr.ok)"
+
+    # 8. Vertex JWT signing (throwaway test RSA key embedded below; no network, no real creds)
+    $testPem = @'
+-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCnolMNfA92jqp6
+7m9hsyofXn5BmfVOunwC9/MHT2bI1JLvDVZOg5TBdTssmSZbN5dQiJ0XI1BHgS5E
+KX2V+WwcrgTxZDaHLu0YvJ/4RSHHuqrNxX95N1SBKPEAhzWo9gG8GeCbRY82KG/0
+82yvuiSikbhCCFu8pdp9CctJll5eJbTQGuX/1oAkbYc69p4IuWE3GWP8mUd3F2mt
+8R1vwZQqZPwbcVTZBHSfGiKGT0qh2QA/Y0OqWgwxjmKCxXjBQmUn45//qnrG4okj
+lVjZSKo5qpjuCSjjP64Zo9BRDxqELS2B0DucbCFo1LOnxXRX7ynId3PO4UmAw0VX
+eaV6FMgnAgMBAAECggEAI8+tH23X3dN3fwCN4djFEGN+5GPQAGwdTwMKM48WXaPv
+6cq3G9nHPxbct9fV1lnHZQhySr2cClKCAES+0/mvS2cvniPy9CkltImjQQX/w+vQ
+Tlo5M7uKvXbyGVNJNtmrIDSFA5a2E/NKi5EvMFE7P1GTA+RGOMRTqy+a8pMBgOoD
+JUHjrQ8sGnKBppt8mmWXpdnKXm5gme+9jARHsywXMfqOkfR8IRWgKLaYgwJg9ei0
+EwqaKDfb0ltqf9bMPs8Wg7DLDGXmr7tnEiTOYcJKESJ5FUgPIQZRn1xxqWStDAXw
+aVKrGup4KUtdxAKumds4W5FJeaXUk5W69Xvhc1ldMQKBgQDn91iBgZk7IqmcIdSA
+AncmMcW2n9LQbmClwh4sQI21F2RJ4x3RIMqEtzAEJWHKMh/02K/eiR07EUCcYV3j
+cw9OUJIjHjQwOnEJitMB29XXWOIpBT5nY+iDzpjLOOV3jIu1JqOa8RI5tXZojSIM
+BuP29Of5megKh0g5SW+xMqIMkQKBgQC5AKNv6b/GtbTi4IB95Si/3zjP+ypDpbQF
+2jf45swwONkis0rRhXQD4qJ27A+O5QcTiu3sAPR6/+X450e1+ENIrAN/ZoqrGbZM
+sLSnKOGuG7JanJrODsdStX9ZWtxBW6Z46Lev03xMQSjKSb3YfE85ZQZNU9L2TVbn
+5r9J0lFFNwKBgAoQDdPYZmhNUaRHR2uiL78Fa7lHZ6LJFwI50ItE5aDUefJGmvWG
+gaKOO9QCNyLJV9+MQtzZf94fGnluM995D1HrZtuFJOhusJakYhDzk2w7G9yBsLpV
+eDG3laNDPZkZDLp4CaLgEFVWjONuM+rnpZ4B88o9JfbG9ZgemmzKcIMxAoGBAJfE
+0k+JL27Qumg1TLP7PwbJFU5p+i4szhbPAoQKsxAMUvWIqKRiGt7lGer9lXXgpYF+
+w9iMoAQX0o3zDn1WAbyogOYPNUtQeKFJhapse1feGN8FAmpw7UwI4URoqbBkg5lF
+MQvpL1tPSStKe5gRwtyO6DCfx72PjPAJ+HuTMmDZAoGAUmI54rHLiPY+7jiy8tb3
+M+Pkvxw6C6TAFQOhMf91bd/JN/OUIgh2ZjYhZhxZbIUNe1TJKdry7WM27LJ7E5SV
+1xz+YZLEVyx7xdbttBsUP9ampTm/j5WCR34oTihL37tT2m+oN9KCXkZXw6N44lkR
+59cQI/7AAxkKGjDQqDwMu88=
+-----END PRIVATE KEY-----
+'@
+    try {
+        $jwt = [PPVertexAuth]::MakeJwt('svc@example.iam.gserviceaccount.com', $testPem, 'https://oauth2.googleapis.com/token', 'https://www.googleapis.com/auth/cloud-platform', 1700000000, 1700003600)
+        $parts = $jwt -split '\.'
+        $ok = [PPVertexAuth]::VerifyJwt($testPem, $jwt)
+        Check 'vertex JWT RS256' (($parts.Count -eq 3) -and $ok) "parts=$($parts.Count) ok=$ok"
+    } catch { Check 'vertex JWT RS256' $false $_.Exception.Message }
+
+    # 9. provider file import (owner's Vertex schema)
+    $provFile = '[{"Name":"Vertex Pro","Provider":"VertexAI","Model":"gemini-2.5-pro","Endpoint":"https://aiplatform.googleapis.com/v1/projects/p/locations/global/publishers/google","ClientEmail":"svc@p.iam.gserviceaccount.com","PrivateKey":"-----BEGIN PRIVATE KEY-----\nABC\n-----END PRIVATE KEY-----\n","MaxRetries":8}]'
+    $imp = ConvertFrom-PPProviderFile $provFile
+    Check 'provider file import' ((@($imp).Count -eq 1) -and ($imp[0].dialect -eq 'gemini') -and ($imp[0].auth -eq 'vertex') -and ($imp[0].model -eq 'gemini-2.5-pro') -and ($imp[0].clientEmail -eq 'svc@p.iam.gserviceaccount.com')) "dialect=$($imp[0].dialect) auth=$($imp[0].auth)"
+
+    # 10. live HTTP (needs network; reported as FAIL if unreachable)
     try {
         $g = Invoke-PPRequest -Method 'GET' -Url 'https://postman-echo.com/get?ping=1' -TimeoutSec 30
         Check 'HTTP GET 200' ($g.ok -and $g.statusCode -eq 200) "ok=$($g.ok) code=$($g.statusCode) err=$($g.error)"

@@ -72,6 +72,31 @@ function New-PPCollection {
     return @{ name = $Name; requests = @() }
 }
 
+# An LLM provider entry. One shape covers every auth type; unused fields stay empty.
+function New-PPLlmProvider {
+    param(
+        [string]$Name = '', [string]$Dialect = 'openai', [string]$Auth = 'bearer',
+        [string]$BaseUrl = '', [string]$Model = '', $Models = @(),
+        [string]$ApiKey = '', [string]$ClientEmail = '', [string]$PrivateKey = '', [int]$MaxRetries = 0
+    )
+    return @{
+        name = $Name; dialect = $Dialect; auth = $Auth       # dialect: openai|anthropic|gemini ; auth: bearer|anthropic|googleApiKey|vertex
+        baseUrl = $BaseUrl; model = $Model; models = $Models
+        apiKey = $ApiKey                                      # bearer/anthropic/googleApiKey
+        clientEmail = $ClientEmail; privateKey = $PrivateKey  # vertex (service account)
+        maxRetries = $MaxRetries
+        accessToken = ''; tokenExpiry = ''                    # cached vertex OAuth token
+    }
+}
+
+# Default LLM config — ships the big providers with NO secrets (keys entered at runtime).
+function New-PPLlmConfig {
+    $openai = New-PPLlmProvider 'OpenAI' 'openai' 'bearer' 'https://api.openai.com/v1' 'gpt-4o' @('gpt-4o', 'gpt-4o-mini')
+    $anthropic = New-PPLlmProvider 'Anthropic' 'anthropic' 'anthropic' 'https://api.anthropic.com/v1' 'claude-opus-4-8' @('claude-opus-4-8', 'claude-sonnet-4-6', 'claude-haiku-4-5')
+    $gemini = New-PPLlmProvider 'Gemini (AI Studio)' 'gemini' 'googleApiKey' 'https://generativelanguage.googleapis.com/v1beta' 'gemini-2.0-flash' @('gemini-2.0-flash', 'gemini-1.5-pro')
+    return @{ providers = @($openai, $anthropic, $gemini); activeProvider = ''; activeModel = '' }
+}
+
 function New-PPState {
     return @{
         version      = 1
@@ -83,6 +108,7 @@ function New-PPState {
         environments = @()              # list of New-PPEnvironment
         activeEnv    = ''               # name of the active environment; '' = none
         collections  = @()              # list of New-PPCollection (saved request library)
+        llm          = (New-PPLlmConfig)# LLM Playground provider catalog + last selection
     }
 }
 
@@ -179,6 +205,42 @@ function Resolve-PPCollection {
     return $c
 }
 
+function Resolve-PPLlmProvider {
+    param($Raw)
+    $p = New-PPLlmProvider
+    if ($null -eq $Raw) { return $p }
+    $p.name        = [string](Get-PPProp $Raw 'name' '')
+    $p.dialect     = [string](Get-PPProp $Raw 'dialect' 'openai')
+    $p.auth        = [string](Get-PPProp $Raw 'auth' 'bearer')
+    $p.baseUrl     = [string](Get-PPProp $Raw 'baseUrl' '')
+    $p.model       = [string](Get-PPProp $Raw 'model' '')
+    $mlist = @()
+    foreach ($m in @(Get-PPProp $Raw 'models' @())) { if ($null -ne $m) { $mlist += [string]$m } }
+    $p.models      = $mlist
+    $p.apiKey      = [string](Get-PPProp $Raw 'apiKey' '')
+    $p.clientEmail = [string](Get-PPProp $Raw 'clientEmail' '')
+    $p.privateKey  = [string](Get-PPProp $Raw 'privateKey' '')
+    $p.maxRetries  = [int](Get-PPProp $Raw 'maxRetries' 0)
+    $p.accessToken = [string](Get-PPProp $Raw 'accessToken' '')
+    $p.tokenExpiry = [string](Get-PPProp $Raw 'tokenExpiry' '')
+    return $p
+}
+
+function Resolve-PPLlmConfig {
+    param($Raw)
+    if ($null -eq $Raw) { return (New-PPLlmConfig) }
+    $provsRaw = Get-PPProp $Raw 'providers' $null
+    $provs = @()
+    foreach ($rp in @($provsRaw)) { if ($null -ne $rp) { $provs += (Resolve-PPLlmProvider $rp) } }
+    # Empty/absent providers -> seed defaults so first run is usable.
+    if ($provs.Count -eq 0) { return (New-PPLlmConfig) }
+    return @{
+        providers      = $provs
+        activeProvider = [string](Get-PPProp $Raw 'activeProvider' '')
+        activeModel    = [string](Get-PPProp $Raw 'activeModel' '')
+    }
+}
+
 function Resolve-PPState {
     param($Raw)
     $s = New-PPState
@@ -213,5 +275,7 @@ function Resolve-PPState {
     $cols = @()
     foreach ($rc in @(Get-PPProp $Raw 'collections' @())) { $cols += (Resolve-PPCollection $rc) }
     $s.collections = $cols
+
+    $s.llm = Resolve-PPLlmConfig (Get-PPProp $Raw 'llm' $null)
     return $s
 }

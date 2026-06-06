@@ -1,0 +1,26 @@
+{
+  // Requires the "PowerShell" VS Code extension (ms-vscode.PowerShell).
+  // For the GUI config, the integrated console must be STA (WinForms needs it).
+  // Windows PowerShell 5.1's integrated console is STA by default — pick
+  // "Windows PowerShell (x64)" via the session menu if F5 doesn't show the window.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "PowerPost: Launch GUI",
+      "type": "PowerShell",
+      "request": "launch",
+      "script": "${workspaceFolder}/PowerPost.ps1",
+      "cwd": "${workspaceFolder}",
+      "createTemporaryIntegratedConsole": true
+    },
+    {
+      "name": "PowerPost: Self-Test (debug)",
+      "type": "PowerShell",
+      "request": "launch",
+      "script": "${workspaceFolder}/PowerPost.ps1",
+      "args": [ "-SelfTest" ],
+      "cwd": "${workspaceFolder}",
+      "createTemporaryIntegratedConsole": true
+    }
+  ]
+}

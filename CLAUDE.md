@@ -37,17 +37,18 @@ The auto-close hook lives in `Start-PowerPost`'s `Add_Shown` handler.
 
 `PowerPost.ps1` is the entry point: STA guard → TLS1.2 + cert-policy setup → dot-sources
 `lib\*.ps1` in dependency order → either `-SelfTest` or `Start-PowerPost`. In `-SelfTest`
-mode only the non-UI libs load (`Model, Json, State, Http, Auth, Vars, Curl`); GUI libs are
-skipped, so keep those free of WinForms dependencies.
+mode only the non-UI libs load (`Model, Json, State, Http, Auth, Vars, Curl, Llm`); GUI libs
+are skipped, so keep those free of WinForms dependencies.
 
 Layered, leaf-first load order (`PowerPost.ps1`):
-`Model → Json → State → Http → Auth → Vars → Curl` then
-`Ui.Controls → Ui.Env → Ui.Collections → Ui.Code → Ui.Tab → Ui.Send → Ui.Main`.
+`Model → Json → State → Http → Auth → Vars → Curl → Llm` then
+`Ui.Controls → Ui.Env → Ui.Collections → Ui.Code → Ui.Llm → Ui.Tab → Ui.Send → Ui.Main`.
 Dependencies only point downward; don't introduce upward calls. `Vars.ps1` holds the
 UI-free `{{variable}}` substitution (`Expand-PPVars`, `Get-PPVarMap`, `Expand-PPKvList`,
-`Expand-PPAuth`); `Curl.ps1` holds UI-free cURL import/export; `Ui.Env.ps1` is the
-environment selector + manager dialog; `Ui.Collections.ps1` is the saved-request sidebar;
-`Ui.Code.ps1` is the cURL import dialog + copy-as commands.
+`Expand-PPAuth`); `Curl.ps1` holds UI-free cURL import/export; `Llm.ps1` holds the UI-free LLM
+adapters + Vertex JWT; `Ui.Env.ps1` is the environment selector + manager dialog;
+`Ui.Collections.ps1` is the saved-request sidebar; `Ui.Code.ps1` is the cURL import dialog +
+copy-as commands; `Ui.Llm.ps1` is the LLM Playground window.
 
 Key design points to preserve:
 
@@ -116,6 +117,18 @@ Key design points to preserve:
   way, expanding `{{variables}}` first so output is runnable. Import opens a new tab; the copy
   commands act on the current tab via `Get-PPCurrentCtx`. Keep this UI-free so `-SelfTest` covers
   the parse/generate round-trip.
+
+- **LLM Playground** (`Llm.ps1` + `Ui.Llm.ps1`): multi-provider chat split into a **dialect**
+  (request/response body: `openai`/`anthropic`/`gemini`) and an **auth** type
+  (`bearer`/`anthropic`/`googleApiKey`/`vertex`). `Build-PPLlmBody` builds the body per dialect;
+  `Resolve-PPLlmAuthHeaders` builds headers per auth; `Read-PPLlmResponse` extracts text/usage;
+  `Invoke-PPLlmChat` ties them together (expanding `{{vars}}` first, sending via `Invoke-PPRequest`).
+  Provider catalog lives in `state.llm.providers` (JSON-editable; `ConvertFrom-PPProviderFile`
+  imports the owner's `VertexAI` file shape). **Vertex** auth signs a service-account JWT via the
+  `PPVertexAuth` `Add-Type` C# helper — it hand-parses the PKCS#8 PEM (no `ImportPkcs8PrivateKey`
+  on net48) and signs RS256 with `RSACng`; tokens cache on the provider via `Set-PPTokenFromResponse`.
+  Keep `Llm.ps1` UI-free so `-SelfTest` covers builders/parsers/JWT. The Playground is a
+  single-instance modeless window (`$Global:PPApp.llmForm`/`llmCtx`); handlers read `llmCtx`.
 
 - **Persistence** (`State.ps1`): state saves to `powerpost.state.json` next to the script on
   Ctrl+S and on window close (`Add_FormClosing`). Corrupt files are backed up to `.bak` and a

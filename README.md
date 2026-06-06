@@ -24,6 +24,7 @@ product.
   - [Collections](#collections)
   - [Environments](#environments)
   - [Import & export](#import--export)
+  - [LLM Playground](#llm-playground)
 - [OAuth notes](#oauth-notes)
 - [Security](#security)
 - [Validate the build](#validate-the-build)
@@ -46,6 +47,9 @@ product.
 - **cURL import / export** — paste a cURL command (toolbar **Import cURL**) to build a request in
   a new tab, or right-click a tab → **Copy as cURL** / **Copy as PowerShell** to copy a runnable
   snippet of the current request. See [Import & export](#import--export).
+- **LLM Playground** — a chat window for testing LLM endpoints (OpenAI, Anthropic, Gemini AI
+  Studio, and Vertex AI) with text **and image** input. Multi-provider via a small JSON catalog;
+  images are sent the way each provider expects. See [LLM Playground](#llm-playground).
 - **Environments & variables** — define named environments of `{{variable}}` values and switch
   between them from the toolbar. Tokens like `{{baseUrl}}` / `{{token}}` are substituted into the
   URL, params, headers, body, form fields, and auth at send time (the `Request` preview shows the
@@ -149,6 +153,36 @@ else. **Note:** variable values are stored in plaintext — see [Security](#secu
   auth, the snippet includes a token only if one has already been fetched. Multipart/file bodies
   export to `curl -F`; the PowerShell snippet notes them rather than inlining file uploads.)
 
+### LLM Playground
+
+Click **LLM Playground** in the toolbar to open a chat window for testing LLM endpoints across
+providers. It ships knowing four **dialects**:
+
+| Provider | Dialect (body) | Auth |
+| --- | --- | --- |
+| OpenAI (and OpenAI-compatible: Groq, OpenRouter, Azure, Ollama) | `openai` | `bearer` API key |
+| Anthropic | `anthropic` | `x-api-key` |
+| Gemini (AI Studio) | `gemini` | `x-goog-api-key` |
+| Vertex AI (Gemini) | `gemini` | `vertex` — service-account JWT → OAuth token |
+
+Usage:
+
+1. **Providers…** opens a JSON editor of the provider catalog. Fill in your API key (or paste
+   `{{var}}` and supply it from an [environment](#environments)). For **Vertex AI**, click
+   **Import from file…** and select an `llm-providers.json` (the
+   `Name`/`Provider`/`Model`/`Endpoint`/`ClientEmail`/`PrivateKey` shape) — `VertexAI` entries are
+   mapped to the gemini dialect with service-account auth automatically.
+2. Pick a **Provider** and **Model**, optionally set a **System** prompt, **Max tok**, and **Temp**.
+3. Type a message, optionally **Attach image(s)**, and **Send** (or Ctrl+Enter). The reply appears
+   in the transcript; **View raw** shows the last raw JSON response.
+
+Images are read from disk and encoded the way each provider expects (base64 `image_url` for
+OpenAI, `image` source blocks for Anthropic, `inline_data` for Gemini/Vertex) — so you can OCR or
+describe an image straight from a file path. Non-streaming in this version (send → wait → reply).
+
+> **Vertex AI** authenticates by signing a JWT with your service-account private key (RS256) and
+> exchanging it for a short-lived access token, which is cached until it expires.
+
 ## OAuth notes
 
 - **Authorization Code:** the redirect URI is `http://localhost:<Redirect Port>/` (default
@@ -162,9 +196,12 @@ else. **Note:** variable values are stored in plaintext — see [Security](#secu
 ## Security
 
 Secrets (bearer tokens, client secrets, passwords) and fetched OAuth tokens are saved in
-**plaintext** in `powerpost.state.json`. This is intended for development credentials
-against internal APIs. The file is git-ignored by default — don't commit it, and don't
-store production secrets in it.
+**plaintext** in `powerpost.state.json` — including **LLM provider API keys and Vertex AI
+service-account private keys** entered in the Playground. This is intended for development
+credentials against internal APIs. The file is git-ignored by default — don't commit it, and
+don't store production secrets in it. To keep keys out of the file entirely, write them as
+`{{var}}` and supply them from an [environment](#environments). If a private key is ever
+exposed, **rotate it** at the provider.
 
 ## Validate the build
 
@@ -187,10 +224,12 @@ lib\Http.ps1         request execution via HttpClient
 lib\Auth.ps1         auth headers + OAuth2 token acquisition (client-creds, auth-code+PKCE)
 lib\Vars.ps1         {{variable}} substitution (environments)
 lib\Curl.ps1         cURL import + cURL/PowerShell export
+lib\Llm.ps1          LLM adapters (openai/anthropic/gemini) + Vertex service-account JWT
 lib\Ui.Controls.ps1  reusable WinForms builders (grids, fields, auth panel)
 lib\Ui.Env.ps1       environment selector + manager dialog
 lib\Ui.Collections.ps1  collections sidebar (tree of saved requests) + commands
 lib\Ui.Code.ps1      cURL import dialog + copy-as-cURL/PowerShell commands
+lib\Ui.Llm.ps1       LLM Playground window + provider JSON config dialog
 lib\Ui.Tab.ps1       per-tab editor + response panel + model<->controls sync
 lib\Ui.Send.ps1      send, render response, fetch tokens, save response
 lib\Ui.Main.ps1      main window, toolbar, tab management, save/close, About

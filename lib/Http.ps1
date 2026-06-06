@@ -59,6 +59,9 @@ function Invoke-PPRequest {
 
         $verb = $Method.ToUpper()
         $req = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]$verb, $Url)
+        # Don't send "Expect: 100-continue" — some servers/proxies (e.g. Google's frontend)
+        # reject it with HTTP 417 on large POST bodies (such as a base64 image).
+        $req.Headers.ExpectContinue = $false
 
         # Build content (body) first so we can attach content-type headers correctly.
         $content = $null

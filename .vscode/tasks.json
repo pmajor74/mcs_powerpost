@@ -1,0 +1,36 @@
+{
+  // Reliable launchers that don't depend on the debugger's apartment state.
+  // "Run PowerPost (GUI)" is the default build task -> Ctrl+Shift+B.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run PowerPost (GUI)",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": [
+        "-STA",
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-File", "${workspaceFolder}\\PowerPost.ps1"
+      ],
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "reveal": "always", "panel": "new", "clear": true },
+      "problemMatcher": [],
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "PowerPost Self-Test",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-File", "${workspaceFolder}\\PowerPost.ps1",
+        "-SelfTest"
+      ],
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+      "problemMatcher": []
+    }
+  ]
+}
