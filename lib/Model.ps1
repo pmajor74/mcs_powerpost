@@ -53,14 +53,22 @@ function New-PPTab {
     }
 }
 
+# An environment is a named bag of {{variable}} substitutions (key/value rows).
+function New-PPEnvironment {
+    param([string]$Name = 'Default')
+    return @{ name = $Name; variables = @() }   # variables: rows from New-PPKv
+}
+
 function New-PPState {
     return @{
-        version   = 1
-        window    = @{ width = 1100; height = 780; x = -1; y = -1; maximized = $false }
-        activeTab = 0
-        ignoreSsl = $false
-        timeout   = 100
-        tabs      = @((New-PPTab))
+        version      = 1
+        window       = @{ width = 1100; height = 780; x = -1; y = -1; maximized = $false }
+        activeTab    = 0
+        ignoreSsl    = $false
+        timeout      = 100
+        tabs         = @((New-PPTab))
+        environments = @()              # list of New-PPEnvironment
+        activeEnv    = ''               # name of the active environment; '' = none
     }
 }
 
@@ -119,6 +127,15 @@ function Resolve-PPTab {
     return $t
 }
 
+function Resolve-PPEnvironment {
+    param($Raw)
+    $e = New-PPEnvironment
+    if ($null -eq $Raw) { return $e }
+    $e.name      = [string](Get-PPProp $Raw 'name' 'Default')
+    $e.variables = Resolve-PPKvList (Get-PPProp $Raw 'variables' @())
+    return $e
+}
+
 function Resolve-PPState {
     param($Raw)
     $s = New-PPState
@@ -127,6 +144,7 @@ function Resolve-PPState {
     $s.activeTab = [int](Get-PPProp $Raw 'activeTab' 0)
     $s.ignoreSsl = [bool](Get-PPProp $Raw 'ignoreSsl' $false)
     $s.timeout   = [int](Get-PPProp $Raw 'timeout' 100)
+    $s.activeEnv = [string](Get-PPProp $Raw 'activeEnv' '')
 
     $w = Get-PPProp $Raw 'window' $null
     $s.window = @{
@@ -142,5 +160,11 @@ function Resolve-PPState {
     if ($tabs.Count -eq 0) { $tabs = @((New-PPTab)) }
     $s.tabs = $tabs
     if ($s.activeTab -lt 0 -or $s.activeTab -ge $s.tabs.Count) { $s.activeTab = 0 }
+
+    $envs = @()
+    foreach ($re in @(Get-PPProp $Raw 'environments' @())) { $envs += (Resolve-PPEnvironment $re) }
+    $s.environments = $envs
+    # Drop a stale active-env reference that no longer matches any environment.
+    if ($s.activeEnv -and (@($envs | ForEach-Object { $_.name }) -notcontains $s.activeEnv)) { $s.activeEnv = '' }
     return $s
 }

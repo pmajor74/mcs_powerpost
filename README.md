@@ -1,8 +1,34 @@
-# PowerPost
+# MCS PowerPost
 
-A lightweight, single-folder **Postman replacement** for Windows, written in Windows
-PowerShell 5.1 + WinForms. No account, no cloud, no telemetry — just a GUI for hitting
-your own internal APIs.
+> A lightweight, single-folder **Postman replacement** for Windows — no account, no cloud, no telemetry.
+
+![Platform](https://img.shields.io/badge/platform-Windows-blue)
+![PowerShell](https://img.shields.io/badge/PowerShell-5.1-5391FE)
+![UI](https://img.shields.io/badge/UI-WinForms-512BD4)
+![License](https://img.shields.io/badge/license-proprietary-lightgrey)
+
+**MCS PowerPost** is a tabbed API tester written in Windows PowerShell 5.1 + WinForms. It's a
+single folder of scripts — nothing to install, no dependencies to restore — just a GUI for
+hitting your own internal APIs. A [Major Computing Systems](https://majorcomputingsystems.ca)
+product.
+
+<!-- Add a screenshot at docs/screenshot.png to show it here -->
+![MCS PowerPost](docs/screenshot.png)
+
+## Table of contents
+
+- [Features](#features)
+- [Getting started](#getting-started)
+- [Usage](#usage)
+  - [Keyboard shortcuts](#keyboard-shortcuts)
+  - [Environments](#environments)
+- [OAuth notes](#oauth-notes)
+- [Security](#security)
+- [Validate the build](#validate-the-build)
+- [Project layout](#project-layout)
+- [Roadmap](#roadmap)
+- [License](#license)
+- [About](#about)
 
 ## Features
 
@@ -10,6 +36,10 @@ your own internal APIs.
   double-clicking the tab header or right-click → Rename; Duplicate and Close from the
   toolbar or right-click menu.
 - **Methods** — GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS.
+- **Environments & variables** — define named environments of `{{variable}}` values and switch
+  between them from the toolbar. Tokens like `{{baseUrl}}` / `{{token}}` are substituted into the
+  URL, params, headers, body, form fields, and auth at send time (the `Request` preview shows the
+  resolved values). See [Environments](#environments).
 - **Params / Headers** — enable/disable individual rows; params are merged into the query
   string at send time.
 - **Body** — `No body`, `JSON`, `Text`, or `Form URL-encoded` (sets the right
@@ -33,23 +63,54 @@ your own internal APIs.
 - **State** — saved to `powerpost.state.json` **next to the script**, on `Save` (Ctrl+S)
   and automatically when you close the window. Reopens exactly where you left off.
 
-## Running it
+## Getting started
 
-Double-click `Run-PowerPost.cmd`, **or** from a terminal:
+**Requirements:** Windows with the in-box Windows PowerShell 5.1 (not PowerShell 7+).
 
-```powershell
-powershell -STA -ExecutionPolicy Bypass -File .\PowerPost.ps1
-```
+1. Clone or download this repository.
+2. Launch it:
+   - Double-click **`Run-PowerPost.cmd`**, **or**
+   - From a terminal:
+     ```powershell
+     powershell -STA -ExecutionPolicy Bypass -File .\PowerPost.ps1
+     ```
 
-(The script auto-relaunches itself under `-STA` if needed — STA is required for WinForms.)
+   The script auto-relaunches itself under `-STA` if needed — STA is required for WinForms.
+
+## Usage
+
+Open a tab, choose a method, type a URL, fill in params/headers/body/auth as needed, and hit
+**Send**. The response panel shows the status, timing, size, a pretty-printed body, the raw
+body, response headers, and the exact request that was sent.
 
 ### Keyboard shortcuts
+
 | Shortcut | Action |
 | --- | --- |
 | `Ctrl+Enter` / `F5` | Send the current request |
 | `Ctrl+T` | New tab |
 | `Ctrl+W` | Close tab |
 | `Ctrl+S` | Save state |
+
+### Environments
+
+Use environments to avoid hard-coding hosts, tokens, and other values that change between (say)
+local, staging, and production.
+
+1. Click **Environments** in the toolbar to open the manager.
+2. **Add** an environment, give it a name, and fill the variable grid with `key` / `value` rows
+   (disable a row to leave it out without deleting it).
+3. Click **OK**, then pick the environment from the toolbar dropdown (or **No Environment** to
+   send literal values).
+
+Anywhere in a request you can then write `{{key}}` and it is replaced at send time — in the URL,
+params, headers, body, form fields, and the auth fields (bearer token, basic creds, OAuth URLs/
+client id/secret/scope). Inner spaces are tolerated, so `{{ key }}` works too. Unknown or disabled
+variables are left untouched (e.g. `{{missing}}` is sent as-is) so you can spot mistakes. The
+`Request` tab in the response panel always shows the fully-resolved request that went on the wire.
+
+Environments and the active selection are saved in `powerpost.state.json` along with everything
+else. **Note:** variable values are stored in plaintext — see [Security](#security).
 
 ## OAuth notes
 
@@ -77,7 +138,7 @@ powershell -File .\PowerPost.ps1 -SelfTest
 Runs quick local checks (state round-trip, JSON formatter, PKCE S256 vector, and a live
 GET/POST against postman-echo.com) and prints PASS/FAIL per check.
 
-## Layout
+## Project layout
 
 ```
 PowerPost.ps1        entry point: STA guard, TLS/cert setup, loads lib\, self-test, launch
@@ -87,8 +148,35 @@ lib\State.ps1        load/save powerpost.state.json
 lib\Json.ps1         JSON pretty-printer
 lib\Http.ps1         request execution via HttpClient
 lib\Auth.ps1         auth headers + OAuth2 token acquisition (client-creds, auth-code+PKCE)
+lib\Vars.ps1         {{variable}} substitution (environments)
 lib\Ui.Controls.ps1  reusable WinForms builders (grids, fields, auth panel)
+lib\Ui.Env.ps1       environment selector + manager dialog
 lib\Ui.Tab.ps1       per-tab editor + response panel + model<->controls sync
 lib\Ui.Send.ps1      send, render response, fetch tokens, save response
-lib\Ui.Main.ps1      main window, toolbar, tab management, save/close
+lib\Ui.Main.ps1      main window, toolbar, tab management, save/close, About
 ```
+
+## Roadmap
+
+Planned features to bring MCS PowerPost closer to Postman, roughly in priority order:
+
+- ~~**Environments & variables**~~ — ✅ shipped: `{{baseUrl}}` / `{{token}}` substitution with
+  switchable environments.
+- **Collections** — a saved-request sidebar tree instead of flat tabs only.
+- **cURL import / export** — paste a cURL command to build a request; copy as cURL or PowerShell.
+- **multipart/form-data** — file-upload request bodies.
+- **Request history** — recent sends with one-click reload.
+- **Response search** — find within large response bodies.
+- **Settings UI** — timeout, follow-redirects, and proxy controls.
+- Later: cookie jar, pre-request/post-response tests, OpenAPI/Postman-collection import,
+  saved response examples, GraphQL bodies.
+
+## License
+
+Proprietary — Copyright © Major Computing Systems. No `LICENSE` file is included yet; add one
+to set explicit usage terms.
+
+## About
+
+**MCS PowerPost** is built and maintained by **Major Computing Systems** —
+[majorcomputingsystems.ca](https://majorcomputingsystems.ca).

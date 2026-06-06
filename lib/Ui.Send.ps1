@@ -65,17 +65,27 @@ function Invoke-PPSend {
     $form.Refresh()
     try {
         $timeout = Get-PPTimeoutSec
-        $url = Build-PPUrl $m.url $m.params
-        $auth = Resolve-PPAuthHeaders $m.auth $timeout
+        # Expand {{variables}} from the active environment into a copy of the request,
+        # so the wire request (and preview) use resolved values but the saved model keeps tokens.
+        $vars    = Get-PPActiveVarMap
+        $url     = Build-PPUrl (Expand-PPVars $m.url $vars) (Expand-PPKvList $m.params $vars)
+        $headers = Expand-PPKvList $m.headers $vars
+        $body    = Expand-PPVars $m.body $vars
+        $formRows = Expand-PPKvList $m.form $vars
+        $authExpanded = Expand-PPAuth $m.auth $vars
+        $auth = Resolve-PPAuthHeaders $authExpanded $timeout
+        # Carry any freshly fetched/refreshed token back to the persisted model.
+        $m.auth.accessToken = $authExpanded.accessToken
+        $m.auth.tokenExpiry = $authExpanded.tokenExpiry
         if (-not $auth.ok) {
-            $Ctx.respReqBox.Text = Format-PPRequestPreview $m.method $url $m.headers @() $m.bodyType $m.body $m.form
+            $Ctx.respReqBox.Text = Format-PPRequestPreview $m.method $url $headers @() $m.bodyType $body $formRows
             $Ctx.respStatus.ForeColor = [System.Drawing.Color]::DarkRed
             $Ctx.respStatus.Text = "Auth error: $($auth.error)"
             return
         }
-        $Ctx.respReqBox.Text = Format-PPRequestPreview $m.method $url $m.headers $auth.headers $m.bodyType $m.body $m.form
-        $resp = Invoke-PPRequest -Method $m.method -Url $url -Headers $m.headers `
-            -AuthHeaders $auth.headers -BodyType $m.bodyType -Body $m.body -Form $m.form -TimeoutSec $timeout
+        $Ctx.respReqBox.Text = Format-PPRequestPreview $m.method $url $headers $auth.headers $m.bodyType $body $formRows
+        $resp = Invoke-PPRequest -Method $m.method -Url $url -Headers $headers `
+            -AuthHeaders $auth.headers -BodyType $m.bodyType -Body $body -Form $formRows -TimeoutSec $timeout
         Show-PPResponse $Ctx $resp
     } finally {
         $form.Cursor = $oldCursor
@@ -116,7 +126,8 @@ function Show-PPResponse {
 function Invoke-PPGetToken {
     param($Ctx, [string]$Flow)
     Sync-PPAuthToModel $Ctx
-    $auth = $Ctx.model.auth
+    # Fetch against variable-expanded values, but cache the token on the real model.
+    $auth = Expand-PPAuth $Ctx.model.auth (Get-PPActiveVarMap)
     $r = $Ctx.auth.refs
     $statusLabel = $(if ($Flow -eq 'authcode') { $r.acStatus } else { $r.ccStatus })
 
@@ -135,6 +146,9 @@ function Invoke-PPGetToken {
             $auth.type = 'clientcreds'
             $result = Get-PPClientCredentialsToken $auth $timeout
         }
+        # Persist the fetched token back onto the real (unexpanded) model.
+        $Ctx.model.auth.accessToken = $auth.accessToken
+        $Ctx.model.auth.tokenExpiry = $auth.tokenExpiry
         if ($result.ok) {
             $statusLabel.ForeColor = [System.Drawing.Color]::FromArgb(0, 128, 0)
             $statusLabel.Text = "Token acquired ($($result.token.Length) chars)."

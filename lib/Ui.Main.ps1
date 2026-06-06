@@ -1,5 +1,12 @@
 # Ui.Main.ps1 — main window, toolbar, tab management, save/close, app bootstrap.
 
+# Brand/version constants — single source of truth for the title bar and About screen.
+$script:PPName      = 'MCS PowerPost'
+$script:PPVersion   = '1.0.0'
+$script:PPCompany   = 'Major Computing Systems'
+$script:PPWebsite   = 'https://majorcomputingsystems.ca'
+$script:PPCopyright = "Copyright (c) 2026 $script:PPCompany"
+
 function Get-PPCurrentCtx {
     $tc = $Global:PPApp.tabControl
     if ($tc -and $tc.SelectedTab) { return $tc.SelectedTab.Tag }
@@ -99,11 +106,56 @@ function New-PPToolbarButton {
     return $b
 }
 
+# About dialog — app name/version, copyright, and a clickable website link.
+function Show-PPAbout {
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = "About $script:PPName"
+    $dlg.FormBorderStyle = 'FixedDialog'
+    $dlg.StartPosition = 'CenterParent'
+    $dlg.MinimizeBox = $false; $dlg.MaximizeBox = $false; $dlg.ShowInTaskbar = $false
+    $dlg.ClientSize = New-Object System.Drawing.Size(380, 200)
+
+    $lblName = New-Object System.Windows.Forms.Label
+    $lblName.Text = "$script:PPName  v$script:PPVersion"
+    $lblName.Font = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold)
+    $lblName.AutoSize = $true
+    $lblName.Location = New-Object System.Drawing.Point(18, 18)
+
+    $lblTag = New-Object System.Windows.Forms.Label
+    $lblTag.Text = 'A lightweight Postman-style API tester.'
+    $lblTag.AutoSize = $true
+    $lblTag.Location = New-Object System.Drawing.Point(18, 52)
+
+    $lblCopy = New-Object System.Windows.Forms.Label
+    $lblCopy.Text = $script:PPCopyright
+    $lblCopy.AutoSize = $true
+    $lblCopy.Location = New-Object System.Drawing.Point(18, 88)
+
+    $link = New-Object System.Windows.Forms.LinkLabel
+    $link.Text = 'majorcomputingsystems.ca'
+    $link.AutoSize = $true
+    $link.Location = New-Object System.Drawing.Point(18, 112)
+    $link.Add_LinkClicked({ try { Start-Process $script:PPWebsite } catch { } })
+
+    $ok = New-Object System.Windows.Forms.Button
+    $ok.Text = 'OK'; $ok.DialogResult = [System.Windows.Forms.DialogResult]::OK
+    $ok.Size = New-Object System.Drawing.Size(84, 28)
+    $ok.Location = New-Object System.Drawing.Point(278, 158)
+
+    $dlg.Controls.AddRange(@($lblName, $lblTag, $lblCopy, $link, $ok))
+    $dlg.AcceptButton = $ok
+
+    $owner = $null
+    if ($Global:PPApp) { $owner = $Global:PPApp.form }
+    if ($owner) { [void]$dlg.ShowDialog($owner) } else { [void]$dlg.ShowDialog() }
+    $dlg.Dispose()
+}
+
 function Start-PowerPost {
     param($State)
 
     $form = New-Object System.Windows.Forms.Form
-    $form.Text = 'PowerPost'
+    $form.Text = $script:PPName
     $form.KeyPreview = $true
     $form.MinimumSize = New-Object System.Drawing.Size(720, 480)
     $w = $State.window
@@ -121,11 +173,22 @@ function Start-PowerPost {
     $btnDup  = New-PPToolbarButton 'Duplicate'
     $btnClose = New-PPToolbarButton 'Close Tab'
     $btnSave = New-PPToolbarButton 'Save'
+    $btnAbout = New-PPToolbarButton 'About'
+    $btnEnv  = New-PPToolbarButton 'Environments'; $btnEnv.Width = 104
+    $envCombo = New-Object System.Windows.Forms.ComboBox
+    $envCombo.DropDownStyle = 'DropDownList'; $envCombo.Dock = 'Left'; $envCombo.Width = 170
+    Update-PPEnvCombo $envCombo $State
+    $tip = New-Object System.Windows.Forms.ToolTip
+    $tip.SetToolTip($envCombo, 'Active environment for {{variable}} substitution')
     $chkSsl = New-Object System.Windows.Forms.CheckBox
     $chkSsl.Text = 'Ignore SSL errors'; $chkSsl.Dock = 'Left'; $chkSsl.Width = 130; $chkSsl.TextAlign = 'MiddleLeft'
     $chkSsl.Checked = [bool]$State.ignoreSsl
-    # Docked-left order is right-to-left by add order; add so New ends up leftmost.
+    # Docked-left order is right-to-left by add order; add so New ends up leftmost
+    # and About ends up rightmost.
+    $toolbar.Controls.Add($btnAbout)
     $toolbar.Controls.Add($chkSsl)
+    $toolbar.Controls.Add($btnEnv)
+    $toolbar.Controls.Add($envCombo)
     $toolbar.Controls.Add($btnSave)
     $toolbar.Controls.Add($btnClose)
     $toolbar.Controls.Add($btnDup)
@@ -147,7 +210,7 @@ function Start-PowerPost {
 
     $Global:PPApp = @{
         form = $form; tabControl = $tabControl; state = $State
-        ignoreSslCheck = $chkSsl; statusLabel = $statusLabel
+        ignoreSslCheck = $chkSsl; statusLabel = $statusLabel; envCombo = $envCombo
     }
     $Global:PPIgnoreSsl = [bool]$State.ignoreSsl
     [PPCertPolicy]::IgnoreErrors = [bool]$State.ignoreSsl
@@ -173,6 +236,15 @@ function Start-PowerPost {
     $btnDup.Add_Click({ Copy-PPTabCmd })
     $btnClose.Add_Click({ Close-PPTabCmd })
     $btnSave.Add_Click({ Save-PPAll })
+    $btnAbout.Add_Click({ Show-PPAbout })
+    $envCombo.Add_SelectedIndexChanged({
+        $idx = $this.SelectedIndex
+        if ($idx -le 0) { $Global:PPApp.state.activeEnv = '' }
+        else { $Global:PPApp.state.activeEnv = [string]$Global:PPApp.state.environments[$idx - 1].name }
+    })
+    $btnEnv.Add_Click({
+        if (Show-PPEnvManager) { Update-PPEnvCombo $Global:PPApp.envCombo $Global:PPApp.state }
+    })
     $chkSsl.Add_CheckedChanged({
         $Global:PPIgnoreSsl = [bool]$this.Checked
         [PPCertPolicy]::IgnoreErrors = [bool]$this.Checked

@@ -1,7 +1,8 @@
 #requires -Version 5
 <#
 .SYNOPSIS
-    PowerPost - a lightweight Postman-style API tester for Windows PowerShell 5.1.
+    MCS PowerPost - a lightweight Postman-style API tester for Windows PowerShell 5.1.
+    A Major Computing Systems product (https://majorcomputingsystems.ca).
 .DESCRIPTION
     Tabbed request editor (method/URL/params/headers/body) with No-auth, Bearer/JWT,
     Basic, and OAuth2 (client-credentials and authorization-code + PKCE) auth. Tabs and
@@ -59,8 +60,8 @@ if (-not $SelfTest) {
 }
 
 # Load the library (order: leaf dependencies first).
-$libFiles = @('Model.ps1', 'Json.ps1', 'State.ps1', 'Http.ps1', 'Auth.ps1')
-if (-not $SelfTest) { $libFiles += @('Ui.Controls.ps1', 'Ui.Tab.ps1', 'Ui.Send.ps1', 'Ui.Main.ps1') }
+$libFiles = @('Model.ps1', 'Json.ps1', 'State.ps1', 'Http.ps1', 'Auth.ps1', 'Vars.ps1')
+if (-not $SelfTest) { $libFiles += @('Ui.Controls.ps1', 'Ui.Env.ps1', 'Ui.Tab.ps1', 'Ui.Send.ps1', 'Ui.Main.ps1') }
 foreach ($f in $libFiles) { . (Join-Path $PSScriptRoot "lib\$f") }
 
 function Invoke-PPSelfTest {
@@ -77,9 +78,14 @@ function Invoke-PPSelfTest {
         $s.tabs[0].url = 'https://example.com/x'
         $s.tabs[0].name = 'RT'
         $s.tabs += (New-PPTab 'Second')
+        $envRt = New-PPEnvironment 'Dev'
+        $envRt.variables = @( (New-PPKv $true 'host' 'dev.example.com') )
+        $s.environments = @($envRt)
+        $s.activeEnv = 'Dev'
         Save-PPState $s $tmp | Out-Null
         $loaded = Load-PPState $tmp
         Check 'state round-trip' (($loaded.tabs.Count -eq 2) -and ($loaded.tabs[0].url -eq 'https://example.com/x') -and ($loaded.tabs[1].name -eq 'Second')) "tabs=$($loaded.tabs.Count)"
+        Check 'env round-trip' (($loaded.environments.Count -eq 1) -and ($loaded.activeEnv -eq 'Dev') -and ($loaded.environments[0].variables[0].value -eq 'dev.example.com')) "envs=$($loaded.environments.Count) active=$($loaded.activeEnv)"
     } finally { Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue }
 
     # 2. JSON formatter
@@ -92,7 +98,19 @@ function Invoke-PPSelfTest {
     $challenge = Get-PPCodeChallenge 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'
     Check 'PKCE S256 challenge' ($challenge -eq 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM') "got $challenge"
 
-    # 4. live HTTP (needs network; reported as FAIL if unreachable)
+    # 4. environment variable substitution
+    $env = New-PPEnvironment 'T'
+    $env.variables = @(
+        (New-PPKv $true  'host' 'api.example.com'),
+        (New-PPKv $true  'ver'  'v2'),
+        (New-PPKv $false 'off'  'SHOULD_NOT_APPEAR')
+    )
+    $map = Get-PPVarMap $env
+    Check 'var map skips disabled' (($map.Count -eq 2) -and (-not $map.ContainsKey('off'))) "count=$($map.Count)"
+    $expanded = Expand-PPVars 'https://{{host}}/{{ ver }}/x?d={{off}}&m={{nope}}' $map
+    Check 'var substitution' ($expanded -eq 'https://api.example.com/v2/x?d={{off}}&m={{nope}}') "got $expanded"
+
+    # 5. live HTTP (needs network; reported as FAIL if unreachable)
     try {
         $g = Invoke-PPRequest -Method 'GET' -Url 'https://postman-echo.com/get?ping=1' -TimeoutSec 30
         Check 'HTTP GET 200' ($g.ok -and $g.statusCode -eq 200) "ok=$($g.ok) code=$($g.statusCode) err=$($g.error)"
