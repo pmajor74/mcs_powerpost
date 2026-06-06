@@ -63,7 +63,7 @@ if (-not $SelfTest) {
 
 # Load the library (order: leaf dependencies first).
 $libFiles = @('Model.ps1', 'Json.ps1', 'State.ps1', 'Http.ps1', 'Auth.ps1', 'Vars.ps1', 'Curl.ps1', 'Llm.ps1')
-if (-not $SelfTest) { $libFiles += @('Ui.Controls.ps1', 'Ui.Env.ps1', 'Ui.Collections.ps1', 'Ui.Code.ps1', 'Ui.Llm.ps1', 'Ui.Tab.ps1', 'Ui.Send.ps1', 'Ui.Main.ps1') }
+if (-not $SelfTest) { $libFiles += @('Ui.Controls.ps1', 'Ui.Env.ps1', 'Ui.Collections.ps1', 'Ui.Code.ps1', 'Ui.Llm.ps1', 'Ui.Tools.ps1', 'Ui.Tab.ps1', 'Ui.Send.ps1', 'Ui.Main.ps1') }
 foreach ($f in $libFiles) { . (Join-Path $PSScriptRoot "lib\$f") }
 
 function Invoke-PPSelfTest {
@@ -97,6 +97,12 @@ function Invoke-PPSelfTest {
         $lt.conversation = @( @{ role = 'user'; text = 'hello'; images = @('C:\x\a.png') }, @{ role = 'assistant'; text = 'hi'; images = @() } )
         $s.llm.tabs = @($lt)
         $s.llm.activeTab = 0
+        $s.followRedirects = $false; $s.proxy = 'http://proxy.local:8080'
+        $s.cookiesEnabled = $false
+        $s.cookies = @( @{ name = 'sid'; value = 'abc123'; domain = 'example.com'; path = '/'; expires = ''; secure = $true; httpOnly = $true } )
+        $he = New-PPHistoryEntry; $he.method = 'POST'; $he.url = 'https://h/x'; $he.statusCode = 201; $he.ok = $true
+        $he.request = (New-PPTab 'Hist'); $he.request.url = 'https://h/x'
+        $s.history = @($he)
         Save-PPState $s $tmp | Out-Null
         $loaded = Load-PPState $tmp
         Check 'state round-trip' (($loaded.tabs.Count -eq 2) -and ($loaded.tabs[0].url -eq 'https://example.com/x') -and ($loaded.tabs[1].name -eq 'Second')) "tabs=$($loaded.tabs.Count)"
@@ -105,6 +111,9 @@ function Invoke-PPSelfTest {
         Check 'multipart round-trip' (($loaded.tabs[0].bodyType -eq 'multipart') -and ($loaded.tabs[0].multipart.Count -eq 2) -and ($loaded.tabs[0].multipart[0].kind -eq 'file') -and ($loaded.tabs[0].multipart[0].value -eq 'C:\pics\me.png')) "mp=$($loaded.tabs[0].multipart.Count)"
         Check 'llm tab round-trip' (($loaded.llm.tabs.Count -eq 1) -and ($loaded.llm.tabs[0].name -eq 'OCR chat') -and ($loaded.llm.tabs[0].model -eq 'gemini-2.5-pro') -and ($loaded.llm.tabs[0].conversation.Count -eq 2) -and ($loaded.llm.tabs[0].conversation[0].images[0] -eq 'C:\x\a.png')) "tabs=$($loaded.llm.tabs.Count) conv=$($loaded.llm.tabs[0].conversation.Count)"
         Check 'llm tab attachments+thinking' (($loaded.llm.tabs[0].thinking -eq 'High') -and ($loaded.llm.tabs[0].attachments.Count -eq 1) -and ($loaded.llm.tabs[0].attachments[0] -eq 'C:\pending\p.png')) "think=$($loaded.llm.tabs[0].thinking) att=$($loaded.llm.tabs[0].attachments.Count)"
+        Check 'settings round-trip' (($loaded.followRedirects -eq $false) -and ($loaded.proxy -eq 'http://proxy.local:8080') -and ($loaded.cookiesEnabled -eq $false)) "follow=$($loaded.followRedirects) proxy=$($loaded.proxy)"
+        Check 'cookies round-trip' (($loaded.cookies.Count -eq 1) -and ($loaded.cookies[0].name -eq 'sid') -and ($loaded.cookies[0].domain -eq 'example.com') -and ($loaded.cookies[0].secure -eq $true)) "cookies=$($loaded.cookies.Count)"
+        Check 'history round-trip' (($loaded.history.Count -eq 1) -and ($loaded.history[0].statusCode -eq 201) -and ($loaded.history[0].request.url -eq 'https://h/x')) "hist=$($loaded.history.Count)"
     } finally { Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue }
 
     # 2. JSON formatter
@@ -244,7 +253,17 @@ M+Pkvxw6C6TAFQOhMf91bd/JN/OUIgh2ZjYhZhxZbIUNe1TJKdry7WM27LJ7E5SV
     $cons = ConvertFrom-PPProviderFile $multiVx
     Check 'provider file consolidates vertex' ((@($cons).Count -eq 1) -and ($cons[0].name -eq 'Google Vertex') -and (@($cons[0].models).Count -eq 2) -and ($cons[0].auth -eq 'vertex')) "count=$(@($cons).Count) models=$(@($cons[0].models).Count)"
 
-    # 10. live HTTP (needs network; reported as FAIL if unreachable)
+    # 10. cookie jar export/import + enumeration (no network)
+    $cj = New-Object System.Net.CookieContainer
+    $cj.Add((New-Object System.Net.Cookie('sid', 'abc', '/', 'example.com')))
+    $cj.Add((New-Object System.Net.Cookie('tok', 'xyz', '/api', 'example.com')))
+    $exp = Export-PPCookies $cj
+    $cj2 = New-Object System.Net.CookieContainer
+    Import-PPCookies $cj2 $exp
+    $all2 = Get-PPAllCookies $cj2
+    Check 'cookie export/import' ((@($exp).Count -eq 2) -and (@($all2).Count -eq 2) -and (@($all2 | Where-Object { $_.Name -eq 'sid' -and $_.Value -eq 'abc' }).Count -eq 1)) "exp=$(@($exp).Count) imp=$(@($all2).Count)"
+
+    # 11. live HTTP (needs network; reported as FAIL if unreachable)
     try {
         $g = Invoke-PPRequest -Method 'GET' -Url 'https://postman-echo.com/get?ping=1' -TimeoutSec 30
         Check 'HTTP GET 200' ($g.ok -and $g.statusCode -eq 200) "ok=$($g.ok) code=$($g.statusCode) err=$($g.error)"
@@ -260,6 +279,11 @@ M+Pkvxw6C6TAFQOhMf91bd/JN/OUIgh2ZjYhZhxZbIUNe1TJKdry7WM27LJ7E5SV
         $mpEchoed = $false
         if ($pm.ok) { try { $mpEchoed = (($pm.body | ConvertFrom-Json).form.hello -eq 'world') } catch { } }
         Check 'HTTP multipart POST' $mpEchoed "ok=$($pm.ok) code=$($pm.statusCode)"
+
+        $jar = New-Object System.Net.CookieContainer
+        $cset = Invoke-PPRequest -Method 'GET' -Url 'https://postman-echo.com/cookies/set?ppjar=works' -CookieContainer $jar -TimeoutSec 30
+        $jarOk = (@(Get-PPAllCookies $jar | Where-Object { $_.Name -eq 'ppjar' -and $_.Value -eq 'works' }).Count -eq 1)
+        Check 'HTTP cookie jar' $jarOk "ok=$($cset.ok) cookies=$(@(Get-PPAllCookies $jar).Count)"
     } catch {
         Check 'HTTP live' $false $_.Exception.Message
     }

@@ -48,7 +48,8 @@ UI-free `{{variable}}` substitution (`Expand-PPVars`, `Get-PPVarMap`, `Expand-PP
 `Expand-PPAuth`); `Curl.ps1` holds UI-free cURL import/export; `Llm.ps1` holds the UI-free LLM
 adapters + Vertex JWT; `Ui.Env.ps1` is the environment selector + manager dialog;
 `Ui.Collections.ps1` is the saved-request sidebar; `Ui.Code.ps1` is the cURL import dialog +
-copy-as commands; `Ui.Llm.ps1` is the LLM Playground window.
+copy-as commands; `Ui.Llm.ps1` is the LLM Playground window; `Ui.Tools.ps1` is the Settings dialog
++ Request history viewer.
 
 Key design points to preserve:
 
@@ -145,6 +146,20 @@ Key design points to preserve:
   into one "Google Vertex" provider whose model list holds all their models. The tab strip has a
   right-click menu (New/Duplicate/Rename/Close); `Duplicate-PPLlmTabCmd` deep-copies the tab model
   (settings + conversation) via a JSON round-trip + `Resolve-PPLlmTab`.
+
+- **Settings & history**: `state.followRedirects`/`proxy` feed `Invoke-PPRequest`
+  (`-FollowRedirects`/`-Proxy` → `HttpClientHandler`); the **Tools** toolbar button drops a menu to
+  `Show-PPSettings`/`Show-PPHistory`. Each send calls `Add-PPHistoryEntry` (`Ui.Send.ps1`) which
+  prepends a `New-PPHistoryEntry` (summary + a `Copy-PPTab` of the request) to `state.history`,
+  capped at 50; the history viewer reopens an entry via `Add-PPTabPage (Copy-PPTab …)`. Response
+  search is `Find-PPResponseMatch` over the active Body/Raw/Request box (`HideSelection=$false`).
+
+- **Cookie jar** (`Http.ps1` + `Ui.Tools.ps1`): a shared `System.Net.CookieContainer` lives at
+  `$Global:PPApp.cookies` (created + `Import-PPCookies` in `Start-PowerPost`, `Export-PPCookies` in
+  `Build-PPStateFromUi`). `Invoke-PPSend` passes it as `-CookieContainer` when
+  `state.cookiesEnabled`. net48 has no `GetAllCookies()`, so `Get-PPAllCookies` enumerates via
+  reflection over the container's private `m_domainTable`/`m_list`. `Show-PPCookies` lists/deletes
+  (rebuilds the container minus the selected cookie) / clears.
 
 - **Persistence** (`State.ps1`): state saves to `powerpost.state.json` next to the script on
   Ctrl+S and on window close (`Add_FormClosing`). Corrupt files are backed up to `.bak` and a

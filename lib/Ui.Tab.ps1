@@ -22,7 +22,41 @@ function New-PPMultiline {
     $tb.Multiline = $true; $tb.Dock = 'Fill'; $tb.ScrollBars = 'Both'
     $tb.WordWrap = $false; $tb.AcceptsTab = $true; $tb.Font = $script:PPMono
     $tb.ReadOnly = $ReadOnly
+    $tb.HideSelection = $false   # keep search highlight visible when focus leaves the box
     return $tb
+}
+
+# Find the next/prev occurrence of the find term in the active response sub-tab's text box.
+function Find-PPResponseMatch {
+    param($Ctx, [int]$Dir = 1)
+    $idx = $Ctx.respTabs.SelectedIndex
+    $box = switch ($idx) { 0 { $Ctx.respBodyBox } 1 { $Ctx.respRawBox } 3 { $Ctx.respReqBox } default { $null } }
+    if (-not $box) { $Ctx.findStatus.Text = '(no text)'; return }
+    $term = $Ctx.findBox.Text
+    if ([string]::IsNullOrEmpty($term)) { $Ctx.findStatus.Text = ''; return }
+    $text = [string]$box.Text
+    $cmp = [System.StringComparison]::OrdinalIgnoreCase
+    if ($text.Length -eq 0) { $Ctx.findStatus.Text = 'no match'; return }
+    $pos = -1
+    if ($Dir -ge 0) {
+        # Start at the end of the current selection (0 when nothing is selected, so a fresh
+        # Find catches a match at position 0). A prior match has SelectionLength > 0, so we advance.
+        $from = $box.SelectionStart + $box.SelectionLength
+        if ($from -gt $text.Length) { $from = 0 }
+        $pos = $text.IndexOf($term, $from, $cmp)
+        if ($pos -lt 0) { $pos = $text.IndexOf($term, 0, $cmp) }
+    } else {
+        $before = $box.SelectionStart - 1
+        if ($before -lt 0) { $before = $text.Length - 1 }
+        if ($before -ge 0) { $pos = $text.LastIndexOf($term, [Math]::Min($before, $text.Length - 1), $cmp) }
+        if ($pos -lt 0) { $pos = $text.LastIndexOf($term, $text.Length - 1, $cmp) }
+    }
+    if ($pos -ge 0) {
+        $box.Select($pos, $term.Length); $box.ScrollToCaret()
+        $count = 0; $i = 0
+        while (($i = $text.IndexOf($term, $i, $cmp)) -ge 0) { $count++; $i += $term.Length }
+        $Ctx.findStatus.Text = "$count match(es)"
+    } else { $Ctx.findStatus.Text = 'no match' }
 }
 
 function New-PPRequestTab {
@@ -89,7 +123,13 @@ function New-PPRequestTab {
     $respBar = New-Object System.Windows.Forms.Panel; $respBar.Dock = 'Top'; $respBar.Height = 28
     $copyBtn = New-Object System.Windows.Forms.Button; $copyBtn.Text = 'Copy'; $copyBtn.Dock = 'Left'; $copyBtn.Width = 70
     $saveBtn = New-Object System.Windows.Forms.Button; $saveBtn.Text = 'Save...'; $saveBtn.Dock = 'Left'; $saveBtn.Width = 70
+    # find-in-response (searches the active Body/Raw/Request sub-tab)
+    $findNext = New-Object System.Windows.Forms.Button; $findNext.Text = "Find $([char]0x25BC)"; $findNext.Dock = 'Right'; $findNext.Width = 62
+    $findPrev = New-Object System.Windows.Forms.Button; $findPrev.Text = "Find $([char]0x25B2)"; $findPrev.Dock = 'Right'; $findPrev.Width = 62
+    $findBox = New-Object System.Windows.Forms.TextBox; $findBox.Dock = 'Right'; $findBox.Width = 180
+    $findStatus = New-Object System.Windows.Forms.Label; $findStatus.Dock = 'Right'; $findStatus.Width = 86; $findStatus.TextAlign = 'MiddleRight'
     $respBar.Controls.Add($saveBtn); $respBar.Controls.Add($copyBtn)
+    $respBar.Controls.Add($findNext); $respBar.Controls.Add($findPrev); $respBar.Controls.Add($findBox); $respBar.Controls.Add($findStatus)
 
     $respTabs = New-Object System.Windows.Forms.TabControl; $respTabs.Dock = 'Fill'
     $pgRBody = New-Object System.Windows.Forms.TabPage; $pgRBody.Text = 'Body'; $pgRBody.UseVisualStyleBackColor = $true
@@ -114,6 +154,7 @@ function New-PPRequestTab {
     $ctx.bodyTypeCombo = $bodyTypeCombo; $ctx.bodyBox = $bodyBox; $ctx.formGrid = $formGrid; $ctx.multipartGrid = $multipartGrid
     $ctx.auth = $authBuilt
     $ctx.respStatus = $respStatus; $ctx.respBodyBox = $respBodyBox; $ctx.respRawBox = $respRawBox; $ctx.respHeadGrid = $respHeadGrid; $ctx.respReqBox = $respReqBox
+    $ctx.respTabs = $respTabs; $ctx.findBox = $findBox; $ctx.findStatus = $findStatus
     $ctx.split = $split
     $page.Tag = $ctx
 
@@ -144,6 +185,11 @@ function New-PPRequestTab {
     })
     $saveBtn.Tag = $ctx
     $saveBtn.Add_Click({ Save-PPResponseToFile $this.Tag })
+
+    $findNext.Tag = $ctx; $findNext.Add_Click({ Find-PPResponseMatch $this.Tag 1 })
+    $findPrev.Tag = $ctx; $findPrev.Add_Click({ Find-PPResponseMatch $this.Tag -1 })
+    $findBox.Tag = $ctx
+    $findBox.Add_KeyDown({ if ($_.KeyCode -eq 'Return') { $_.SuppressKeyPress = $true; Find-PPResponseMatch $this.Tag 1 } })
 
     $urlBox.Tag = $ctx
     $urlBox.Add_KeyDown({

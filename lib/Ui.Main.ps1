@@ -79,6 +79,7 @@ function Build-PPStateFromUi {
     $state.tabs = $tabs
     $state.activeTab = $Global:PPApp.tabControl.SelectedIndex
     $state.ignoreSsl = [bool]$Global:PPApp.ignoreSslCheck.Checked
+    if ($Global:PPApp.cookies) { $state.cookies = Export-PPCookies $Global:PPApp.cookies }
 
     $form = $Global:PPApp.form
     if ($form.WindowState -eq 'Maximized') {
@@ -176,6 +177,7 @@ function Start-PowerPost {
     $btnAbout = New-PPToolbarButton 'About'
     $btnImport = New-PPToolbarButton 'Import cURL'; $btnImport.Width = 100
     $btnLlm  = New-PPToolbarButton 'LLM Playground'; $btnLlm.Width = 118
+    $btnTools = New-PPToolbarButton 'Tools'; $btnTools.Width = 66
     $btnEnv  = New-PPToolbarButton 'Environments'; $btnEnv.Width = 104
     $envCombo = New-Object System.Windows.Forms.ComboBox
     $envCombo.DropDownStyle = 'DropDownList'; $envCombo.Dock = 'Left'; $envCombo.Width = 170
@@ -189,6 +191,7 @@ function Start-PowerPost {
     # and About ends up rightmost.
     $toolbar.Controls.Add($btnAbout)
     $toolbar.Controls.Add($chkSsl)
+    $toolbar.Controls.Add($btnTools)
     $toolbar.Controls.Add($btnLlm)
     $toolbar.Controls.Add($btnEnv)
     $toolbar.Controls.Add($envCombo)
@@ -229,6 +232,10 @@ function Start-PowerPost {
     $Global:PPIgnoreSsl = [bool]$State.ignoreSsl
     [PPCertPolicy]::IgnoreErrors = [bool]$State.ignoreSsl
 
+    # shared cookie jar (persists across requests; restored from / saved to state)
+    $Global:PPApp.cookies = New-Object System.Net.CookieContainer
+    Import-PPCookies $Global:PPApp.cookies $State.cookies
+
     # context menu for tabs
     $menu = New-Object System.Windows.Forms.ContextMenuStrip
     $miRename = $menu.Items.Add('Rename')
@@ -261,6 +268,14 @@ function Start-PowerPost {
     $btnAbout.Add_Click({ Show-PPAbout })
     $btnImport.Add_Click({ Show-PPImportCurl })
     $btnLlm.Add_Click({ Show-PPLlmPlayground })
+    $toolsMenu = New-Object System.Windows.Forms.ContextMenuStrip
+    $miSettings = $toolsMenu.Items.Add('Settings...')
+    $miHistory  = $toolsMenu.Items.Add('Request history...')
+    $miCookies  = $toolsMenu.Items.Add('Cookies...')
+    $miSettings.Add_Click({ Show-PPSettings })
+    $miHistory.Add_Click({ Show-PPHistory })
+    $miCookies.Add_Click({ Show-PPCookies })
+    $btnTools.Add_Click({ $toolsMenu.Show($btnTools, 0, $btnTools.Height) })
     $envCombo.Add_SelectedIndexChanged({
         $idx = $this.SelectedIndex
         if ($idx -le 0) { $Global:PPApp.state.activeEnv = '' }

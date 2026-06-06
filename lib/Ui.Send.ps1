@@ -96,12 +96,37 @@ function Invoke-PPSend {
             return
         }
         $Ctx.respReqBox.Text = Format-PPRequestPreview $m.method $url $headers $auth.headers $m.bodyType $body $formRows $mpRows
+        $follow = $true; $proxy = ''; $jar = $null
+        if ($Global:PPApp -and $Global:PPApp.state) {
+            $follow = [bool]$Global:PPApp.state.followRedirects; $proxy = [string]$Global:PPApp.state.proxy
+            if ($Global:PPApp.state.cookiesEnabled) { $jar = $Global:PPApp.cookies }
+        }
         $resp = Invoke-PPRequest -Method $m.method -Url $url -Headers $headers `
-            -AuthHeaders $auth.headers -BodyType $m.bodyType -Body $body -Form $formRows -Multipart $mpRows -TimeoutSec $timeout
+            -AuthHeaders $auth.headers -BodyType $m.bodyType -Body $body -Form $formRows -Multipart $mpRows `
+            -TimeoutSec $timeout -FollowRedirects $follow -Proxy $proxy -CookieContainer $jar
         Show-PPResponse $Ctx $resp
+        Add-PPHistoryEntry $m $resp $url
     } finally {
         $form.Cursor = $oldCursor
     }
+}
+
+# Record a send into the rolling request history (most recent first, capped at 50).
+function Add-PPHistoryEntry {
+    param($Model, $Resp, [string]$Url)
+    if (-not ($Global:PPApp -and $Global:PPApp.state)) { return }
+    $entry = @{
+        when       = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+        method     = [string]$Model.method
+        url        = $(if ($Url) { $Url } else { [string]$Model.url })
+        statusCode = [int]($Resp.statusCode)
+        elapsedMs  = [int]($Resp.elapsedMs)
+        ok         = [bool]$Resp.ok
+        request    = (Copy-PPTab $Model)
+    }
+    $h = @($entry) + @($Global:PPApp.state.history)
+    if ($h.Count -gt 50) { $h = $h[0..49] }
+    $Global:PPApp.state.history = $h
 }
 
 function Show-PPResponse {

@@ -45,7 +45,10 @@ function Invoke-PPRequest {
         [string]$Body = '',
         $Form = @(),
         $Multipart = @(),
-        [int]$TimeoutSec = 100
+        [int]$TimeoutSec = 100,
+        [bool]$FollowRedirects = $true,
+        [string]$Proxy = '',
+        $CookieContainer = $null
     )
 
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
@@ -53,7 +56,15 @@ function Invoke-PPRequest {
     $handler = $null
     try {
         $handler = New-Object System.Net.Http.HttpClientHandler
-        $handler.AllowAutoRedirect = $true
+        $handler.AllowAutoRedirect = $FollowRedirects
+        if (-not [string]::IsNullOrWhiteSpace($Proxy)) {
+            $handler.Proxy = New-Object System.Net.WebProxy($Proxy, $true)
+            $handler.UseProxy = $true
+        }
+        if ($null -ne $CookieContainer) {
+            $handler.CookieContainer = $CookieContainer   # shared jar -> cookies persist across requests
+            $handler.UseCookies = $true
+        }
         $client = New-Object System.Net.Http.HttpClient($handler)
         $client.Timeout = [TimeSpan]::FromSeconds([Math]::Max(1, $TimeoutSec))
 
@@ -177,5 +188,57 @@ function Invoke-PPRequest {
     } finally {
         if ($client)  { $client.Dispose() }
         if ($handler) { $handler.Dispose() }
+    }
+}
+
+# --- cookie jar helpers ---
+# .NET Framework's CookieContainer has no GetAllCookies(), so enumerate via reflection
+# over its private domain table. Returns an array of System.Net.Cookie.
+function Get-PPAllCookies {
+    param($Container)
+    $out = @()
+    if ($null -eq $Container) { return , $out }
+    try {
+        $bf = [System.Reflection.BindingFlags]'NonPublic,Instance'
+        $t = $Container.GetType()
+        $df = $t.GetField('m_domainTable', $bf); if ($null -eq $df) { $df = $t.GetField('_domainTable', $bf) }
+        $domainTable = $df.GetValue($Container)
+        foreach ($pathList in $domainTable.Values) {
+            $pt = $pathList.GetType()
+            $lf = $pt.GetField('m_list', $bf); if ($null -eq $lf) { $lf = $pt.GetField('_list', $bf) }
+            $list = $lf.GetValue($pathList)
+            foreach ($cc in $list.Values) { foreach ($ck in $cc) { $out += $ck } }
+        }
+    } catch { }
+    return , $out
+}
+
+# Serialize a CookieContainer to plain maps for state persistence.
+function Export-PPCookies {
+    param($Container)
+    $list = @()
+    foreach ($ck in (Get-PPAllCookies $Container)) {
+        $list += @{
+            name     = $ck.Name; value = $ck.Value; domain = $ck.Domain; path = $ck.Path
+            expires  = $(if ($ck.Expires -eq [DateTime]::MinValue) { '' } else { $ck.Expires.ToString('o') })
+            secure   = [bool]$ck.Secure; httpOnly = [bool]$ck.HttpOnly
+        }
+    }
+    return , $list
+}
+
+# Populate a CookieContainer from persisted cookie maps.
+function Import-PPCookies {
+    param($Container, $List)
+    foreach ($e in @($List)) {
+        if ($null -eq $e -or [string]::IsNullOrEmpty([string]$e.name) -or [string]::IsNullOrEmpty([string]$e.domain)) { continue }
+        try {
+            $path = if ($e.path) { [string]$e.path } else { '/' }
+            $ck = New-Object System.Net.Cookie([string]$e.name, [string]$e.value, $path, [string]$e.domain)
+            if ($e.secure) { $ck.Secure = $true }
+            if ($e.httpOnly) { $ck.HttpOnly = $true }
+            if ($e.expires) { try { $ck.Expires = [DateTime]::Parse($e.expires) } catch { } }
+            $Container.Add($ck)
+        } catch { }
     }
 }

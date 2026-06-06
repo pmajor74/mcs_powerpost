@@ -70,7 +70,14 @@ product.
   - **OAuth2 Authorization Code (+ PKCE)** — opens your browser to sign in, captures the
     redirect on `http://localhost:<port>/`, and exchanges the code for a token.
 - **Response** — status code + reason, elapsed time and size; pretty-printed JSON body,
-  raw body, and a response-headers grid; Copy and Save-to-file.
+  raw body, and a response-headers grid; **find-in-response** (search box with next/prev over the
+  Body/Raw/Request views); Copy and Save-to-file.
+- **Request history** — every send is logged (method/URL/status/time); **Tools → Request history**
+  lists recent sends and reopens any of them in a new tab.
+- **Cookie jar** — a shared cookie store persists `Set-Cookie` values across requests (and
+  restarts); **Tools → Cookies** lists/deletes/clears them, and **Tools → Settings** toggles it.
+- **Settings** — **Tools → Settings** controls request timeout, follow-redirects, an HTTP proxy,
+  and the cookie jar.
 - **Request preview** — a `Request` tab in the response panel shows the *exact* request
   that went on the wire after each Send (final URL with params merged, every header
   including the resolved auth header, and the body), so you can tell at a glance whether a
@@ -232,8 +239,9 @@ Secrets (bearer tokens, client secrets, passwords) and fetched OAuth tokens are 
 **plaintext** in `powerpost.state.json` — including **LLM provider API keys and Vertex AI
 service-account private keys** entered in the Playground. This is intended for development
 credentials against internal APIs. The file is git-ignored by default — don't commit it, and
-don't store production secrets in it. To keep keys out of the file entirely, write them as
-`{{var}}` and supply them from an [environment](#environments). If a private key is ever
+don't store production secrets in it. Saved **cookies** (which can include session tokens) are also
+stored there in plaintext — use **Tools → Cookies → Clear all** to wipe them. To keep keys out of
+the file entirely, write them as `{{var}}` and supply them from an [environment](#environments). If a private key is ever
 exposed, **rotate it** at the provider.
 
 ## Validate the build
@@ -263,7 +271,8 @@ lib\Ui.Env.ps1       environment selector + manager dialog
 lib\Ui.Collections.ps1  collections sidebar (tree of saved requests) + commands
 lib\Ui.Code.ps1      cURL import dialog + copy-as-cURL/PowerShell commands
 lib\Ui.Llm.ps1       LLM Playground window + provider JSON config dialog
-lib\Ui.Tab.ps1       per-tab editor + response panel + model<->controls sync
+lib\Ui.Tools.ps1     Settings dialog + Request history viewer
+lib\Ui.Tab.ps1       per-tab editor + response panel (incl. find-in-response) + model<->controls sync
 lib\Ui.Send.ps1      send, render response, fetch tokens, save response
 lib\Ui.Main.ps1      main window, toolbar, tab management, save/close, About
 ```
@@ -277,11 +286,12 @@ Planned features to bring MCS PowerPost closer to Postman, roughly in priority o
 - ~~**Collections**~~ — ✅ shipped: a saved-request sidebar tree alongside the tabs.
 - ~~**cURL import / export**~~ — ✅ shipped: paste cURL to build a request; copy as cURL or PowerShell.
 - ~~**multipart/form-data**~~ — ✅ shipped: text + file-upload request bodies.
-- **Request history** — recent sends with one-click reload.
-- **Response search** — find within large response bodies.
-- **Settings UI** — timeout, follow-redirects, and proxy controls.
-- Later: cookie jar, pre-request/post-response tests, OpenAPI/Postman-collection import,
-  saved response examples, GraphQL bodies.
+- ~~**Request history**~~ — ✅ shipped: recent sends with one-click reload (Tools → Request history).
+- ~~**Response search**~~ — ✅ shipped: find-in-response with next/prev.
+- ~~**Settings UI**~~ — ✅ shipped: timeout, follow-redirects, and proxy (Tools → Settings).
+- ~~**Cookie jar**~~ — ✅ shipped: shared cookie store across requests (Tools → Cookies).
+- Later: pre-request/post-response tests, OpenAPI/Postman-collection import,
+  saved response examples, GraphQL bodies, bulk-edit headers/params, collection-level auth.
 
 ## License
 

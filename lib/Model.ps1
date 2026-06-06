@@ -116,6 +116,11 @@ function New-PPState {
         activeTab    = 0
         ignoreSsl    = $false
         timeout      = 100
+        followRedirects = $true         # follow 3xx redirects
+        proxy        = ''               # HTTP proxy URL ('' = none)
+        cookiesEnabled = $true          # use a shared cookie jar across requests
+        cookies      = @()              # persisted cookies (Resolve-PPCookie shape)
+        history      = @()              # recent sends (New-PPHistoryEntry shape)
         tabs         = @((New-PPTab))
         environments = @()              # list of New-PPEnvironment
         activeEnv    = ''               # name of the active environment; '' = none
@@ -291,6 +296,38 @@ function Resolve-PPLlmConfig {
     }
 }
 
+function Resolve-PPCookie {
+    param($Raw)
+    return @{
+        name     = [string](Get-PPProp $Raw 'name' '')
+        value    = [string](Get-PPProp $Raw 'value' '')
+        domain   = [string](Get-PPProp $Raw 'domain' '')
+        path     = [string](Get-PPProp $Raw 'path' '/')
+        expires  = [string](Get-PPProp $Raw 'expires' '')
+        secure   = [bool](Get-PPProp $Raw 'secure' $false)
+        httpOnly = [bool](Get-PPProp $Raw 'httpOnly' $false)
+    }
+}
+
+# A request-history entry: summary fields + a re-runnable copy of the request model.
+function New-PPHistoryEntry {
+    return @{ when = ''; method = 'GET'; url = ''; statusCode = 0; elapsedMs = 0; ok = $false; request = (New-PPTab) }
+}
+
+function Resolve-PPHistoryEntry {
+    param($Raw)
+    $e = New-PPHistoryEntry
+    if ($null -eq $Raw) { return $e }
+    $e.when       = [string](Get-PPProp $Raw 'when' '')
+    $e.method     = [string](Get-PPProp $Raw 'method' 'GET')
+    $e.url        = [string](Get-PPProp $Raw 'url' '')
+    $e.statusCode = [int](Get-PPProp $Raw 'statusCode' 0)
+    $e.elapsedMs  = [int](Get-PPProp $Raw 'elapsedMs' 0)
+    $e.ok         = [bool](Get-PPProp $Raw 'ok' $false)
+    $e.request    = Resolve-PPTab (Get-PPProp $Raw 'request' $null)
+    return $e
+}
+
 function Resolve-PPState {
     param($Raw)
     $s = New-PPState
@@ -299,6 +336,9 @@ function Resolve-PPState {
     $s.activeTab = [int](Get-PPProp $Raw 'activeTab' 0)
     $s.ignoreSsl = [bool](Get-PPProp $Raw 'ignoreSsl' $false)
     $s.timeout   = [int](Get-PPProp $Raw 'timeout' 100)
+    $s.followRedirects = [bool](Get-PPProp $Raw 'followRedirects' $true)
+    $s.proxy     = [string](Get-PPProp $Raw 'proxy' '')
+    $s.cookiesEnabled = [bool](Get-PPProp $Raw 'cookiesEnabled' $true)
     $s.activeEnv = [string](Get-PPProp $Raw 'activeEnv' '')
 
     $w = Get-PPProp $Raw 'window' $null
@@ -327,5 +367,13 @@ function Resolve-PPState {
     $s.collections = $cols
 
     $s.llm = Resolve-PPLlmConfig (Get-PPProp $Raw 'llm' $null)
+
+    $hist = @()
+    foreach ($rh in @(Get-PPProp $Raw 'history' @())) { if ($null -ne $rh) { $hist += (Resolve-PPHistoryEntry $rh) } }
+    $s.history = $hist
+
+    $cks = @()
+    foreach ($rc in @(Get-PPProp $Raw 'cookies' @())) { if ($null -ne $rc) { $cks += (Resolve-PPCookie $rc) } }
+    $s.cookies = $cks
     return $s
 }
