@@ -62,7 +62,7 @@ if (-not $SelfTest) {
 }
 
 # Load the library (order: leaf dependencies first).
-$libFiles = @('Model.ps1', 'Json.ps1', 'State.ps1', 'Http.ps1', 'Auth.ps1', 'Vars.ps1', 'Curl.ps1', 'Llm.ps1')
+$libFiles = @('Model.ps1', 'Json.ps1', 'State.ps1', 'Http.ps1', 'Auth.ps1', 'Vars.ps1', 'Curl.ps1', 'Llm.ps1', 'Import.ps1')
 if (-not $SelfTest) { $libFiles += @('Ui.Controls.ps1', 'Ui.Env.ps1', 'Ui.Collections.ps1', 'Ui.Code.ps1', 'Ui.Llm.ps1', 'Ui.Tools.ps1', 'Ui.Tab.ps1', 'Ui.Send.ps1', 'Ui.Main.ps1') }
 foreach ($f in $libFiles) { . (Join-Path $PSScriptRoot "lib\$f") }
 
@@ -91,6 +91,7 @@ function Invoke-PPSelfTest {
         $s.collections = @($colRt)
         $s.tabs[0].bodyType = 'multipart'
         $s.tabs[0].multipart = @( (New-PPMultipartRow $true 'avatar' 'file' 'C:\pics\me.png'), (New-PPMultipartRow $true 'note' 'text' 'hi') )
+        $s.tabs[1].bodyType = 'graphql'; $s.tabs[1].body = '{ me { id } }'; $s.tabs[1].graphqlVars = '{"x":1}'
         $lt = New-PPLlmTab 'OCR chat'
         $lt.provider = 'Vertex AI'; $lt.model = 'gemini-2.5-pro'; $lt.system = 'be terse'; $lt.thinking = 'High'
         $lt.attachments = @('C:\pending\p.png')
@@ -109,6 +110,7 @@ function Invoke-PPSelfTest {
         Check 'env round-trip' (($loaded.environments.Count -eq 1) -and ($loaded.activeEnv -eq 'Dev') -and ($loaded.environments[0].variables[0].value -eq 'dev.example.com')) "envs=$($loaded.environments.Count) active=$($loaded.activeEnv)"
         Check 'collection round-trip' (($loaded.collections.Count -eq 1) -and ($loaded.collections[0].name -eq 'Smoke') -and ($loaded.collections[0].requests[0].method -eq 'POST') -and ($loaded.collections[0].requests[0].url -eq 'https://example.com/ping')) "cols=$($loaded.collections.Count)"
         Check 'multipart round-trip' (($loaded.tabs[0].bodyType -eq 'multipart') -and ($loaded.tabs[0].multipart.Count -eq 2) -and ($loaded.tabs[0].multipart[0].kind -eq 'file') -and ($loaded.tabs[0].multipart[0].value -eq 'C:\pics\me.png')) "mp=$($loaded.tabs[0].multipart.Count)"
+        Check 'graphql round-trip' (($loaded.tabs[1].bodyType -eq 'graphql') -and ($loaded.tabs[1].body -eq '{ me { id } }') -and ($loaded.tabs[1].graphqlVars -eq '{"x":1}')) "bt=$($loaded.tabs[1].bodyType)"
         Check 'llm tab round-trip' (($loaded.llm.tabs.Count -eq 1) -and ($loaded.llm.tabs[0].name -eq 'OCR chat') -and ($loaded.llm.tabs[0].model -eq 'gemini-2.5-pro') -and ($loaded.llm.tabs[0].conversation.Count -eq 2) -and ($loaded.llm.tabs[0].conversation[0].images[0] -eq 'C:\x\a.png')) "tabs=$($loaded.llm.tabs.Count) conv=$($loaded.llm.tabs[0].conversation.Count)"
         Check 'llm tab attachments+thinking' (($loaded.llm.tabs[0].thinking -eq 'High') -and ($loaded.llm.tabs[0].attachments.Count -eq 1) -and ($loaded.llm.tabs[0].attachments[0] -eq 'C:\pending\p.png')) "think=$($loaded.llm.tabs[0].thinking) att=$($loaded.llm.tabs[0].attachments.Count)"
         Check 'settings round-trip' (($loaded.followRedirects -eq $false) -and ($loaded.proxy -eq 'http://proxy.local:8080') -and ($loaded.cookiesEnabled -eq $false)) "follow=$($loaded.followRedirects) proxy=$($loaded.proxy)"
@@ -263,7 +265,53 @@ M+Pkvxw6C6TAFQOhMf91bd/JN/OUIgh2ZjYhZhxZbIUNe1TJKdry7WM27LJ7E5SV
     $all2 = Get-PPAllCookies $cj2
     Check 'cookie export/import' ((@($exp).Count -eq 2) -and (@($all2).Count -eq 2) -and (@($all2 | Where-Object { $_.Name -eq 'sid' -and $_.Value -eq 'abc' }).Count -eq 1)) "exp=$(@($exp).Count) imp=$(@($all2).Count)"
 
-    # 11. live HTTP (needs network; reported as FAIL if unreachable)
+    # 11b. GraphQL body builder + cURL export
+    $gqlBody = ConvertTo-PPGraphQLBody '{ user { id } }' '{"id":5}'
+    $gqlObj = $gqlBody | ConvertFrom-Json
+    Check 'graphql body builder' (($gqlObj.query -eq '{ user { id } }') -and ($gqlObj.variables.id -eq 5)) "body=$gqlBody"
+    $gqlBadVars = ConvertTo-PPGraphQLBody '{ x }' 'not json'
+    Check 'graphql bad vars -> {}' ($gqlBadVars -match '"variables":\s*\{\}') "got $gqlBadVars"
+    $gqlTab = New-PPTab 'g'; $gqlTab.method = 'POST'; $gqlTab.url = 'https://api/graphql'; $gqlTab.bodyType = 'graphql'; $gqlTab.body = '{ ping }'; $gqlTab.graphqlVars = '{"a":1}'
+    $gqlCurl = ConvertTo-PPCurl $gqlTab @{}
+    Check 'graphql curl export' (($gqlCurl -match 'application/json') -and ($gqlCurl -match '\\"query\\"' -or $gqlCurl -match 'query') -and ($gqlCurl -match 'ping')) 'gql curl'
+
+    # 11. collection import (OpenAPI 3 / Swagger 2 / Postman) — no network
+    $oapi = @'
+{ "openapi": "3.0.0", "info": { "title": "Demo API" },
+  "servers": [ { "url": "https://api.demo.test/v1" } ],
+  "paths": {
+    "/users": {
+      "get": { "operationId": "listUsers", "parameters": [ { "name": "limit", "in": "query" }, { "name": "X-Trace", "in": "header" } ] },
+      "post": { "operationId": "createUser",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "name": { "type": "string" }, "age": { "type": "integer" } } } } } } }
+    }
+  } }
+'@
+    $oc = ConvertFrom-PPApiSpec $oapi
+    $post = @($oc.requests | Where-Object { $_.method -eq 'POST' })[0]
+    Check 'import openapi3' (($oc.name -eq 'Demo API') -and (@($oc.requests).Count -eq 2) -and ($post.url -eq 'https://api.demo.test/v1/users') -and ($post.bodyType -eq 'json') -and ($post.body -match 'name')) "reqs=$(@($oc.requests).Count) url=$($post.url)"
+
+    $sw2 = '{ "swagger": "2.0", "host": "h.test", "basePath": "/api", "schemes": ["https"], "info": {"title":"S2"}, "paths": { "/ping": { "get": { "operationId": "ping" } } } }'
+    $sc = ConvertFrom-PPApiSpec $sw2
+    Check 'import swagger2' ((@($sc.requests).Count -eq 1) -and ($sc.requests[0].url -eq 'https://h.test/api/ping')) "url=$($sc.requests[0].url)"
+
+    $pm = @'
+{ "info": { "name": "PM Coll" },
+  "item": [
+    { "name": "Folder", "item": [
+      { "name": "Get thing", "request": { "method": "GET", "url": { "raw": "https://x.test/thing?id=1" },
+        "header": [ { "key": "Accept", "value": "application/json" } ] } },
+      { "name": "Make thing", "request": { "method": "POST", "url": "https://x.test/thing",
+        "body": { "mode": "raw", "raw": "{\"a\":1}", "options": { "raw": { "language": "json" } } },
+        "auth": { "type": "bearer", "bearer": [ { "key": "token", "value": "T0K" } ] } } }
+    ] }
+  ] }
+'@
+    $pc = ConvertFrom-PPApiSpec $pm
+    $mk = @($pc.requests | Where-Object { $_.method -eq 'POST' })[0]
+    Check 'import postman' (($pc.name -eq 'PM Coll') -and (@($pc.requests).Count -eq 2) -and ($pc.requests[0].name -match 'Folder') -and ($mk.bodyType -eq 'json') -and ($mk.auth.type -eq 'bearer') -and ($mk.auth.bearerToken -eq 'T0K')) "reqs=$(@($pc.requests).Count)"
+
+    # 12. live HTTP (needs network; reported as FAIL if unreachable)
     try {
         $g = Invoke-PPRequest -Method 'GET' -Url 'https://postman-echo.com/get?ping=1' -TimeoutSec 30
         Check 'HTTP GET 200' ($g.ok -and $g.statusCode -eq 200) "ok=$($g.ok) code=$($g.statusCode) err=$($g.error)"
@@ -284,6 +332,11 @@ M+Pkvxw6C6TAFQOhMf91bd/JN/OUIgh2ZjYhZhxZbIUNe1TJKdry7WM27LJ7E5SV
         $cset = Invoke-PPRequest -Method 'GET' -Url 'https://postman-echo.com/cookies/set?ppjar=works' -CookieContainer $jar -TimeoutSec 30
         $jarOk = (@(Get-PPAllCookies $jar | Where-Object { $_.Name -eq 'ppjar' -and $_.Value -eq 'works' }).Count -eq 1)
         Check 'HTTP cookie jar' $jarOk "ok=$($cset.ok) cookies=$(@(Get-PPAllCookies $jar).Count)"
+
+        $gq = Invoke-PPRequest -Method 'POST' -Url 'https://postman-echo.com/post' -BodyType 'graphql' -Body '{ hello }' -GraphQLVariables '{"n":7}' -TimeoutSec 30
+        $gqOk = $false
+        if ($gq.ok) { try { $j = ($gq.body | ConvertFrom-Json).json; $gqOk = (($j.query -eq '{ hello }') -and ($j.variables.n -eq 7)) } catch { } }
+        Check 'HTTP graphql POST' $gqOk "ok=$($gq.ok) code=$($gq.statusCode)"
     } catch {
         Check 'HTTP live' $false $_.Exception.Message
     }

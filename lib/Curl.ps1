@@ -202,6 +202,11 @@ function ConvertTo-PPCurl {
                 }
             }
         }
+        'graphql' {
+            if (-not $hasCt) { $parts += '  -H ' + (Quote-PPSh 'Content-Type: application/json') }
+            $gb = ConvertTo-PPGraphQLBody (Expand-PPVars $Model.body $Map) (Expand-PPVars $Model.graphqlVars $Map)
+            $parts += '  --data ' + (Quote-PPSh $gb)
+        }
     }
     if ($Global:PPIgnoreSsl) { $parts += '  --insecure' }
     return ($parts -join " \`n")
@@ -230,6 +235,7 @@ function ConvertTo-PPPowerShell {
         'json' { $ct = 'application/json'; $body = Expand-PPVars $Model.body $Map }
         'text' { $ct = 'text/plain'; $body = Expand-PPVars $Model.body $Map }
         'form' { $ct = 'application/x-www-form-urlencoded'; $body = ConvertTo-PPFormBody (Expand-PPKvList $Model.form $Map) }
+        'graphql' { $ct = 'application/json'; $body = ConvertTo-PPGraphQLBody (Expand-PPVars $Model.body $Map) (Expand-PPVars $Model.graphqlVars $Map) }
         'multipart' { $note = '# Note: multipart/form-data (file upload) is omitted - use "Copy as cURL" for that.' }
     }
     if ($body) {

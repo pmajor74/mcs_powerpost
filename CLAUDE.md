@@ -74,7 +74,10 @@ Key design points to preserve:
   `ok`/`error` rather than throwing; callers branch on `.ok`. Content-type headers must be set
   on the content object, not the request (see the `^Content-` handling).
 
-- **Body types** (`bodyType`): `none|json|text|form|multipart`. `form`/`multipart` use row lists
+- **Body types** (`bodyType`): `none|json|text|form|multipart|graphql`. `graphql` stores the query
+  in `body` and JSON variables in `graphqlVars`; `ConvertTo-PPGraphQLBody` (`Http.ps1`) builds
+  `{"query":…,"variables":…}` (reused by the request preview and cURL export) and is sent as
+  `application/json`. The Body tab's GraphQL card has a query box + a variables box. `form`/`multipart` use row lists
   (`form` = `New-PPKv`; `multipart` = `New-PPMultipartRow` with `kind=text|file`, `value` holding
   the text or file path). `Http.ps1` builds `multipart/form-data` via `MultipartFormDataContent`
   (`ByteArrayContent` for files, read at send time — a missing file `throw`s and surfaces as the
@@ -110,6 +113,14 @@ Key design points to preserve:
   manager, all handlers read `$Global:PPApp` (e.g. `$Global:PPApp.tree.SelectedNode`) rather than
   captured locals. `Build-PPStateFromUi` leaves `collections`/`environments`/`activeEnv` untouched,
   so they persist across the autosave-on-close.
+
+- **Collection import** (`Import.ps1` + `Ui.Tools.ps1`): `ConvertFrom-PPApiSpec` sniffs the JSON
+  (`openapi`/`swagger` → OpenAPI; `info`+`item` → Postman) and returns a `New-PPCollection`.
+  OpenAPI builds requests from `paths`×methods (base URL from `servers`/`host+basePath`, query/header
+  params as disabled rows, JSON body from a depth-limited `$ref`-resolving schema example); Postman
+  flattens nested `item` folders and maps raw/urlencoded/formdata bodies + bearer/basic auth.
+  `Show-PPImportCollection` appends the result to `state.collections` and calls `Build-PPTree`. UI-free
+  so `-SelfTest` covers it.
 
 - **cURL import/export** (`Curl.ps1` + `Ui.Code.ps1`): `Split-PPCommandLine` is a quote-aware
   tokenizer (handles `'`/`"` and `\`/`^`/backtick line continuations). `ConvertFrom-PPCurl`

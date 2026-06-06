@@ -52,10 +52,11 @@ function New-PPTab {
         url       = ''
         params    = @()                 # query-string rows
         headers   = @()
-        bodyType  = 'none'              # none | json | text | form | multipart
-        body      = ''                  # raw text for json/text
+        bodyType  = 'none'              # none | json | text | form | multipart | graphql
+        body      = ''                  # raw text for json/text; the query for graphql
         form      = @()                 # rows for x-www-form-urlencoded
         multipart = @()                 # rows for multipart/form-data (New-PPMultipartRow)
+        graphqlVars = ''                # JSON variables for graphql
         auth      = (New-PPAuth)
     }
 }
@@ -198,6 +199,7 @@ function Resolve-PPTab {
     $t.body      = [string](Get-PPProp $Raw 'body' '')
     $t.form      = Resolve-PPKvList (Get-PPProp $Raw 'form' @())
     $t.multipart = Resolve-PPMultipartList (Get-PPProp $Raw 'multipart' @())
+    $t.graphqlVars = [string](Get-PPProp $Raw 'graphqlVars' '')
     $t.auth      = Resolve-PPAuth (Get-PPProp $Raw 'auth' $null)
     return $t
 }

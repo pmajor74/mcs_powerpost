@@ -1,7 +1,7 @@
 # Ui.Tab.ps1 — build one request tab (editor + response), sync it to the model, send.
 
-$script:PPBodyTypeToText = @{ none = 'No body'; json = 'JSON'; text = 'Text'; form = 'Form URL-encoded'; multipart = 'Multipart form-data' }
-$script:PPBodyTextToType = @{ 'No body' = 'none'; 'JSON' = 'json'; 'Text' = 'text'; 'Form URL-encoded' = 'form'; 'Multipart form-data' = 'multipart' }
+$script:PPBodyTypeToText = @{ none = 'No body'; json = 'JSON'; text = 'Text'; form = 'Form URL-encoded'; multipart = 'Multipart form-data'; graphql = 'GraphQL' }
+$script:PPBodyTextToType = @{ 'No body' = 'none'; 'JSON' = 'json'; 'Text' = 'text'; 'Form URL-encoded' = 'form'; 'Multipart form-data' = 'multipart'; 'GraphQL' = 'graphql' }
 $script:PPMethods = @('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')
 
 function New-PPReadGrid {
@@ -97,10 +97,16 @@ function New-PPRequestTab {
 
     $pgBody = New-Object System.Windows.Forms.TabPage; $pgBody.Text = 'Body'; $pgBody.UseVisualStyleBackColor = $true
     $bodyTypeCombo = New-Object System.Windows.Forms.ComboBox; $bodyTypeCombo.DropDownStyle = 'DropDownList'; $bodyTypeCombo.Dock = 'Top'
-    [void]$bodyTypeCombo.Items.AddRange(@('No body', 'JSON', 'Text', 'Form URL-encoded', 'Multipart form-data'))
+    [void]$bodyTypeCombo.Items.AddRange(@('No body', 'JSON', 'Text', 'Form URL-encoded', 'Multipart form-data', 'GraphQL'))
     $bodyCards = New-Object System.Windows.Forms.Panel; $bodyCards.Dock = 'Fill'
     $bodyBox = New-PPMultiline; $formGrid = New-PPKvGrid; $multipartGrid = New-PPMultipartGrid
-    $bodyCards.Controls.Add($bodyBox); $bodyCards.Controls.Add($formGrid); $bodyCards.Controls.Add($multipartGrid)
+    # GraphQL card: query (fill) + variables (bottom, JSON)
+    $gqlPanel = New-Object System.Windows.Forms.Panel; $gqlPanel.Dock = 'Fill'
+    $gqlQuery = New-PPMultiline
+    $gqlVarsBox = New-PPMultiline; $gqlVarsBox.Dock = 'Bottom'; $gqlVarsBox.Height = 110
+    $gqlVarsLbl = New-Object System.Windows.Forms.Label; $gqlVarsLbl.Text = 'Variables (JSON)'; $gqlVarsLbl.Dock = 'Bottom'; $gqlVarsLbl.Height = 18
+    $gqlPanel.Controls.Add($gqlQuery); $gqlPanel.Controls.Add($gqlVarsLbl); $gqlPanel.Controls.Add($gqlVarsBox)
+    $bodyCards.Controls.Add($bodyBox); $bodyCards.Controls.Add($formGrid); $bodyCards.Controls.Add($multipartGrid); $bodyCards.Controls.Add($gqlPanel)
     $pgBody.Controls.Add($bodyCards); $pgBody.Controls.Add($bodyTypeCombo)
 
     $pgAuth = New-Object System.Windows.Forms.TabPage; $pgAuth.Text = 'Auth'; $pgAuth.UseVisualStyleBackColor = $true
@@ -152,6 +158,7 @@ function New-PPRequestTab {
     $ctx.methodCombo = $methodCombo; $ctx.urlBox = $urlBox; $ctx.sendBtn = $sendBtn
     $ctx.paramsGrid = $paramsGrid; $ctx.headersGrid = $headersGrid
     $ctx.bodyTypeCombo = $bodyTypeCombo; $ctx.bodyBox = $bodyBox; $ctx.formGrid = $formGrid; $ctx.multipartGrid = $multipartGrid
+    $ctx.gqlPanel = $gqlPanel; $ctx.gqlQuery = $gqlQuery; $ctx.gqlVarsBox = $gqlVarsBox
     $ctx.auth = $authBuilt
     $ctx.respStatus = $respStatus; $ctx.respBodyBox = $respBodyBox; $ctx.respRawBox = $respRawBox; $ctx.respHeadGrid = $respHeadGrid; $ctx.respReqBox = $respReqBox
     $ctx.respTabs = $respTabs; $ctx.findBox = $findBox; $ctx.findStatus = $findStatus
@@ -214,6 +221,8 @@ function Set-PPControlsFromModel {
     Set-PPKvGrid $Ctx.headersGrid $m.headers
     $Ctx.bodyTypeCombo.SelectedItem = $script:PPBodyTypeToText[$m.bodyType]
     $Ctx.bodyBox.Text = $m.body
+    $Ctx.gqlQuery.Text = $m.body
+    $Ctx.gqlVarsBox.Text = $m.graphqlVars
     Set-PPKvGrid $Ctx.formGrid $m.form
     Set-PPMultipartGrid $Ctx.multipartGrid $m.multipart
 
@@ -242,7 +251,8 @@ function Sync-PPTabToModel {
     $m.params = Get-PPKvGrid $Ctx.paramsGrid
     $m.headers = Get-PPKvGrid $Ctx.headersGrid
     $m.bodyType = $script:PPBodyTextToType[[string]$Ctx.bodyTypeCombo.SelectedItem]
-    $m.body = $Ctx.bodyBox.Text
+    $m.graphqlVars = $Ctx.gqlVarsBox.Text
+    $m.body = if ($m.bodyType -eq 'graphql') { $Ctx.gqlQuery.Text } else { $Ctx.bodyBox.Text }
     $m.form = Get-PPKvGrid $Ctx.formGrid
     $m.multipart = Get-PPMultipartGrid $Ctx.multipartGrid
     Sync-PPAuthToModel $Ctx
@@ -277,7 +287,9 @@ function Update-PPBodyCard {
     $Ctx.bodyBox.Visible = $showText
     $Ctx.formGrid.Visible = ($type -eq 'form')
     $Ctx.multipartGrid.Visible = ($type -eq 'multipart')
+    $Ctx.gqlPanel.Visible = ($type -eq 'graphql')
     if ($showText) { $Ctx.bodyBox.BringToFront() }
     elseif ($type -eq 'form') { $Ctx.formGrid.BringToFront() }
     elseif ($type -eq 'multipart') { $Ctx.multipartGrid.BringToFront() }
+    elseif ($type -eq 'graphql') { $Ctx.gqlPanel.BringToFront() }
 }

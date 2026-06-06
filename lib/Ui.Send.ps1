@@ -16,7 +16,7 @@ function Format-PPSize {
 
 # Render the exact request that goes on the wire (final URL, headers incl. auth, body).
 function Format-PPRequestPreview {
-    param($Method, $Url, $Headers, $AuthHeaders, $BodyType, $Body, $Form, $Multipart = @())
+    param($Method, $Url, $Headers, $AuthHeaders, $BodyType, $Body, $Form, $Multipart = @(), $GraphQLVariables = '')
     $sb = New-Object System.Text.StringBuilder
     [void]$sb.AppendLine("$Method $Url")
     [void]$sb.AppendLine('')
@@ -35,11 +35,14 @@ function Format-PPRequestPreview {
         'text' { 'text/plain; charset=utf-8' }
         'form' { 'application/x-www-form-urlencoded; charset=utf-8' }
         'multipart' { 'multipart/form-data; boundary=...' }
+        'graphql' { 'application/json; charset=utf-8' }
         default { '' }
     }
     if ($implied -and -not $hasContentType) { [void]$sb.AppendLine("Content-Type: $implied") }
     [void]$sb.AppendLine('')
-    if ($BodyType -eq 'multipart') {
+    if ($BodyType -eq 'graphql') {
+        [void]$sb.Append((Format-PPJson (ConvertTo-PPGraphQLBody $Body $GraphQLVariables)))
+    } elseif ($BodyType -eq 'multipart') {
         $lines = @()
         foreach ($row in @($Multipart)) {
             if ($null -eq $row -or -not $row.enabled -or [string]::IsNullOrEmpty([string]$row.key)) { continue }
@@ -84,18 +87,19 @@ function Invoke-PPSend {
         $body    = Expand-PPVars $m.body $vars
         $formRows = Expand-PPKvList $m.form $vars
         $mpRows  = Expand-PPMultipartList $m.multipart $vars
+        $gqlVars = Expand-PPVars $m.graphqlVars $vars
         $authExpanded = Expand-PPAuth $m.auth $vars
         $auth = Resolve-PPAuthHeaders $authExpanded $timeout
         # Carry any freshly fetched/refreshed token back to the persisted model.
         $m.auth.accessToken = $authExpanded.accessToken
         $m.auth.tokenExpiry = $authExpanded.tokenExpiry
         if (-not $auth.ok) {
-            $Ctx.respReqBox.Text = Format-PPRequestPreview $m.method $url $headers @() $m.bodyType $body $formRows $mpRows
+            $Ctx.respReqBox.Text = Format-PPRequestPreview $m.method $url $headers @() $m.bodyType $body $formRows $mpRows $gqlVars
             $Ctx.respStatus.ForeColor = [System.Drawing.Color]::DarkRed
             $Ctx.respStatus.Text = "Auth error: $($auth.error)"
             return
         }
-        $Ctx.respReqBox.Text = Format-PPRequestPreview $m.method $url $headers $auth.headers $m.bodyType $body $formRows $mpRows
+        $Ctx.respReqBox.Text = Format-PPRequestPreview $m.method $url $headers $auth.headers $m.bodyType $body $formRows $mpRows $gqlVars
         $follow = $true; $proxy = ''; $jar = $null
         if ($Global:PPApp -and $Global:PPApp.state) {
             $follow = [bool]$Global:PPApp.state.followRedirects; $proxy = [string]$Global:PPApp.state.proxy
@@ -103,7 +107,7 @@ function Invoke-PPSend {
         }
         $resp = Invoke-PPRequest -Method $m.method -Url $url -Headers $headers `
             -AuthHeaders $auth.headers -BodyType $m.bodyType -Body $body -Form $formRows -Multipart $mpRows `
-            -TimeoutSec $timeout -FollowRedirects $follow -Proxy $proxy -CookieContainer $jar
+            -GraphQLVariables $gqlVars -TimeoutSec $timeout -FollowRedirects $follow -Proxy $proxy -CookieContainer $jar
         Show-PPResponse $Ctx $resp
         Add-PPHistoryEntry $m $resp $url
     } finally {

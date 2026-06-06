@@ -35,6 +35,17 @@ function ConvertTo-PPFormBody {
     return ($pairs -join '&')
 }
 
+# Build a GraphQL POST body: {"query": <query>, "variables": <json>}.
+# Variables text is embedded raw if it's valid JSON, else replaced with {}.
+function ConvertTo-PPGraphQLBody {
+    param([string]$Query, [string]$Variables)
+    $vars = $Variables
+    if ([string]::IsNullOrWhiteSpace($vars)) { $vars = '{}' }
+    else { try { $null = $vars | ConvertFrom-Json -ErrorAction Stop } catch { $vars = '{}' } }
+    $qJson = ([string]$Query | ConvertTo-Json)   # JSON-encodes the query (quotes, newlines)
+    return '{"query":' + $qJson + ',"variables":' + $vars + '}'
+}
+
 function Invoke-PPRequest {
     param(
         [string]$Method = 'GET',
@@ -48,7 +59,8 @@ function Invoke-PPRequest {
         [int]$TimeoutSec = 100,
         [bool]$FollowRedirects = $true,
         [string]$Proxy = '',
-        $CookieContainer = $null
+        $CookieContainer = $null,
+        [string]$GraphQLVariables = ''
     )
 
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
@@ -87,6 +99,10 @@ function Invoke-PPRequest {
                     if (-not [string]::IsNullOrEmpty($Body)) {
                         $content = New-Object System.Net.Http.StringContent($Body, [System.Text.Encoding]::UTF8, 'text/plain')
                     }
+                }
+                'graphql' {
+                    $gb = ConvertTo-PPGraphQLBody $Body $GraphQLVariables
+                    $content = New-Object System.Net.Http.StringContent($gb, [System.Text.Encoding]::UTF8, 'application/json')
                 }
                 'form' {
                     $fb = ConvertTo-PPFormBody $Form

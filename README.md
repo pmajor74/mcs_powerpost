@@ -41,6 +41,9 @@ product.
 - **Collections** — a left sidebar tree of saved requests grouped into collections. Save the
   current tab into a collection, double-click a saved request to open it in a new tab, and
   right-click to rename, duplicate, or delete. See [Collections](#collections).
+- **Import OpenAPI / Postman** — **Tools → Import collection** turns an OpenAPI/Swagger spec or a
+  Postman collection into a collection of ready-to-send requests (paths, methods, params, headers,
+  and a JSON body skeleton from the schema).
 - **Methods** — GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS.
 - **File uploads** — the `Multipart form-data` body lets you mix text fields and files; pick a
   file per row with the **...** button. Sent as `multipart/form-data` via `HttpClient`.
@@ -58,8 +61,9 @@ product.
   resolved values). See [Environments](#environments).
 - **Params / Headers** — enable/disable individual rows; params are merged into the query
   string at send time.
-- **Body** — `No body`, `JSON`, `Text`, `Form URL-encoded`, or `Multipart form-data`
-  (text **and file** fields, for uploads) — the right `Content-Type` is set automatically.
+- **Body** — `No body`, `JSON`, `Text`, `Form URL-encoded`, `Multipart form-data`
+  (text **and file** fields, for uploads), or `GraphQL` (query + JSON variables, sent as
+  `{"query":…,"variables":…}`) — the right `Content-Type` is set automatically.
 - **Auth**
   - **None**
   - **Bearer / JWT** — paste a token, sent as `Authorization: Bearer <token>`.
@@ -265,6 +269,7 @@ lib\Http.ps1         request execution via HttpClient
 lib\Auth.ps1         auth headers + OAuth2 token acquisition (client-creds, auth-code+PKCE)
 lib\Vars.ps1         {{variable}} substitution (environments)
 lib\Curl.ps1         cURL import + cURL/PowerShell export
+lib\Import.ps1       OpenAPI/Swagger + Postman collection import
 lib\Llm.ps1          LLM adapters (openai/anthropic/gemini) + Vertex service-account JWT
 lib\Ui.Controls.ps1  reusable WinForms builders (grids, fields, auth panel)
 lib\Ui.Env.ps1       environment selector + manager dialog
@@ -290,8 +295,10 @@ Planned features to bring MCS PowerPost closer to Postman, roughly in priority o
 - ~~**Response search**~~ — ✅ shipped: find-in-response with next/prev.
 - ~~**Settings UI**~~ — ✅ shipped: timeout, follow-redirects, and proxy (Tools → Settings).
 - ~~**Cookie jar**~~ — ✅ shipped: shared cookie store across requests (Tools → Cookies).
-- Later: pre-request/post-response tests, OpenAPI/Postman-collection import,
-  saved response examples, GraphQL bodies, bulk-edit headers/params, collection-level auth.
+- ~~**OpenAPI/Postman import**~~ — ✅ shipped: Tools → Import collection.
+- ~~**GraphQL bodies**~~ — ✅ shipped: query + variables body type.
+- Later: pre-request/post-response tests, saved response examples,
+  bulk-edit headers/params, collection-level auth.
 
 ## License
 

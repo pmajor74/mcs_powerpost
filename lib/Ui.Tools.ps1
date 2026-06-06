@@ -39,6 +39,21 @@ function Show-PPSettings {
     [void]$dlg.ShowDialog($Global:PPApp.form); $dlg.Dispose()
 }
 
+# Import an OpenAPI/Swagger spec or Postman collection into a new collection.
+function Show-PPImportCollection {
+    $ofd = New-Object System.Windows.Forms.OpenFileDialog
+    $ofd.Filter = 'API spec / collection (*.json)|*.json|All files (*.*)|*.*'
+    if ($ofd.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { return }
+    try {
+        $col = ConvertFrom-PPApiSpec ([System.IO.File]::ReadAllText($ofd.FileName))
+        $Global:PPApp.state.collections = @($Global:PPApp.state.collections) + @($col)
+        Build-PPTree
+        if ($Global:PPApp.statusLabel) { $Global:PPApp.statusLabel.Text = "Imported '$($col.name)' ($(@($col.requests).Count) request(s)). Save to keep it." }
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show("Could not import that file.`n`n$($_.Exception.Message)", 'Import collection', 'OK', 'Warning') | Out-Null
+    }
+}
+
 function Show-PPCookies {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = 'Cookies'; $dlg.FormBorderStyle = 'Sizable'; $dlg.StartPosition = 'CenterParent'
