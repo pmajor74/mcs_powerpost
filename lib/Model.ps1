@@ -89,12 +89,24 @@ function New-PPLlmProvider {
     }
 }
 
+# A saved LLM Playground tab: provider/model/system/params + full conversation.
+function New-PPLlmTab {
+    param([string]$Name = 'LLM Chat')
+    return @{
+        name = $Name; provider = ''; model = ''; system = ''
+        maxTokens = '4096'; temperature = ''   # generous default — thinking models spend budget on reasoning
+        thinking = ''               # '' = auto (pick the model's lowest supported on first load); else Default|Off|Low|Medium|High
+        attachments = @()           # pending (not-yet-sent) image paths
+        conversation = @()          # rows of @{ role; text; images=@(paths) }
+    }
+}
+
 # Default LLM config — ships the big providers with NO secrets (keys entered at runtime).
 function New-PPLlmConfig {
     $openai = New-PPLlmProvider 'OpenAI' 'openai' 'bearer' 'https://api.openai.com/v1' 'gpt-4o' @('gpt-4o', 'gpt-4o-mini')
     $anthropic = New-PPLlmProvider 'Anthropic' 'anthropic' 'anthropic' 'https://api.anthropic.com/v1' 'claude-opus-4-8' @('claude-opus-4-8', 'claude-sonnet-4-6', 'claude-haiku-4-5')
     $gemini = New-PPLlmProvider 'Gemini (AI Studio)' 'gemini' 'googleApiKey' 'https://generativelanguage.googleapis.com/v1beta' 'gemini-2.0-flash' @('gemini-2.0-flash', 'gemini-1.5-pro')
-    return @{ providers = @($openai, $anthropic, $gemini); activeProvider = ''; activeModel = '' }
+    return @{ providers = @($openai, $anthropic, $gemini); activeProvider = ''; activeModel = ''; tabs = @((New-PPLlmTab)); activeTab = 0 }
 }
 
 function New-PPState {
@@ -226,6 +238,37 @@ function Resolve-PPLlmProvider {
     return $p
 }
 
+function Resolve-PPLlmConvTurn {
+    param($Raw)
+    $imgs = @()
+    foreach ($i in @(Get-PPProp $Raw 'images' @())) { if ($null -ne $i) { $imgs += [string]$i } }
+    return @{
+        role   = [string](Get-PPProp $Raw 'role' 'user')
+        text   = [string](Get-PPProp $Raw 'text' '')
+        images = $imgs
+    }
+}
+
+function Resolve-PPLlmTab {
+    param($Raw)
+    $t = New-PPLlmTab
+    if ($null -eq $Raw) { return $t }
+    $t.name        = [string](Get-PPProp $Raw 'name' 'LLM Chat')
+    $t.provider    = [string](Get-PPProp $Raw 'provider' '')
+    $t.model       = [string](Get-PPProp $Raw 'model' '')
+    $t.system      = [string](Get-PPProp $Raw 'system' '')
+    $t.maxTokens   = [string](Get-PPProp $Raw 'maxTokens' '4096')
+    $t.temperature = [string](Get-PPProp $Raw 'temperature' '')
+    $t.thinking    = [string](Get-PPProp $Raw 'thinking' '')
+    $att = @()
+    foreach ($a in @(Get-PPProp $Raw 'attachments' @())) { if ($null -ne $a) { $att += [string]$a } }
+    $t.attachments = $att
+    $conv = @()
+    foreach ($c in @(Get-PPProp $Raw 'conversation' @())) { if ($null -ne $c) { $conv += (Resolve-PPLlmConvTurn $c) } }
+    $t.conversation = $conv
+    return $t
+}
+
 function Resolve-PPLlmConfig {
     param($Raw)
     if ($null -eq $Raw) { return (New-PPLlmConfig) }
@@ -234,10 +277,17 @@ function Resolve-PPLlmConfig {
     foreach ($rp in @($provsRaw)) { if ($null -ne $rp) { $provs += (Resolve-PPLlmProvider $rp) } }
     # Empty/absent providers -> seed defaults so first run is usable.
     if ($provs.Count -eq 0) { return (New-PPLlmConfig) }
+    $tabs = @()
+    foreach ($rt in @(Get-PPProp $Raw 'tabs' @())) { if ($null -ne $rt) { $tabs += (Resolve-PPLlmTab $rt) } }
+    if ($tabs.Count -eq 0) { $tabs = @((New-PPLlmTab)) }
+    $active = [int](Get-PPProp $Raw 'activeTab' 0)
+    if ($active -lt 0 -or $active -ge $tabs.Count) { $active = 0 }
     return @{
         providers      = $provs
         activeProvider = [string](Get-PPProp $Raw 'activeProvider' '')
         activeModel    = [string](Get-PPProp $Raw 'activeModel' '')
+        tabs           = $tabs
+        activeTab      = $active
     }
 }
 

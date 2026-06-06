@@ -91,12 +91,20 @@ function Invoke-PPSelfTest {
         $s.collections = @($colRt)
         $s.tabs[0].bodyType = 'multipart'
         $s.tabs[0].multipart = @( (New-PPMultipartRow $true 'avatar' 'file' 'C:\pics\me.png'), (New-PPMultipartRow $true 'note' 'text' 'hi') )
+        $lt = New-PPLlmTab 'OCR chat'
+        $lt.provider = 'Vertex AI'; $lt.model = 'gemini-2.5-pro'; $lt.system = 'be terse'; $lt.thinking = 'High'
+        $lt.attachments = @('C:\pending\p.png')
+        $lt.conversation = @( @{ role = 'user'; text = 'hello'; images = @('C:\x\a.png') }, @{ role = 'assistant'; text = 'hi'; images = @() } )
+        $s.llm.tabs = @($lt)
+        $s.llm.activeTab = 0
         Save-PPState $s $tmp | Out-Null
         $loaded = Load-PPState $tmp
         Check 'state round-trip' (($loaded.tabs.Count -eq 2) -and ($loaded.tabs[0].url -eq 'https://example.com/x') -and ($loaded.tabs[1].name -eq 'Second')) "tabs=$($loaded.tabs.Count)"
         Check 'env round-trip' (($loaded.environments.Count -eq 1) -and ($loaded.activeEnv -eq 'Dev') -and ($loaded.environments[0].variables[0].value -eq 'dev.example.com')) "envs=$($loaded.environments.Count) active=$($loaded.activeEnv)"
         Check 'collection round-trip' (($loaded.collections.Count -eq 1) -and ($loaded.collections[0].name -eq 'Smoke') -and ($loaded.collections[0].requests[0].method -eq 'POST') -and ($loaded.collections[0].requests[0].url -eq 'https://example.com/ping')) "cols=$($loaded.collections.Count)"
         Check 'multipart round-trip' (($loaded.tabs[0].bodyType -eq 'multipart') -and ($loaded.tabs[0].multipart.Count -eq 2) -and ($loaded.tabs[0].multipart[0].kind -eq 'file') -and ($loaded.tabs[0].multipart[0].value -eq 'C:\pics\me.png')) "mp=$($loaded.tabs[0].multipart.Count)"
+        Check 'llm tab round-trip' (($loaded.llm.tabs.Count -eq 1) -and ($loaded.llm.tabs[0].name -eq 'OCR chat') -and ($loaded.llm.tabs[0].model -eq 'gemini-2.5-pro') -and ($loaded.llm.tabs[0].conversation.Count -eq 2) -and ($loaded.llm.tabs[0].conversation[0].images[0] -eq 'C:\x\a.png')) "tabs=$($loaded.llm.tabs.Count) conv=$($loaded.llm.tabs[0].conversation.Count)"
+        Check 'llm tab attachments+thinking' (($loaded.llm.tabs[0].thinking -eq 'High') -and ($loaded.llm.tabs[0].attachments.Count -eq 1) -and ($loaded.llm.tabs[0].attachments[0] -eq 'C:\pending\p.png')) "think=$($loaded.llm.tabs[0].thinking) att=$($loaded.llm.tabs[0].attachments.Count)"
     } finally { Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue }
 
     # 2. JSON formatter
@@ -151,6 +159,19 @@ curl -X POST 'https://api.test/v1/users?team=eng' -H 'Accept: application/json' 
     Check 'llm anthropic body' (($ant.urlSuffix -eq '/messages') -and ($ant.body -match 'max_tokens') -and ($ant.body -match 'claude-opus-4-8')) "suffix=$($ant.urlSuffix)"
     $gem = Build-PPLlmBody 'gemini' 'gemini-2.0-flash' '' $llmMsgs @{}
     Check 'llm gemini body' (($gem.urlSuffix -eq '/models/gemini-2.0-flash:generateContent') -and ($gem.body -match 'contents')) "suffix=$($gem.urlSuffix)"
+    $g3 = Build-PPLlmBody 'gemini' 'gemini-3.1-pro-preview' '' $llmMsgs @{ thinking = 'High' }
+    Check 'llm gemini-3 thinkingLevel' (($g3.body -match 'thinkingLevel') -and ($g3.body -match '"high"') -and ($g3.body -notmatch 'thinkingBudget')) 'gemini-3 thinking'
+    $g25 = Build-PPLlmBody 'gemini' 'gemini-2.5-pro' '' $llmMsgs @{ thinking = 'Low' }
+    Check 'llm gemini-2.5 thinkingBudget' (($g25.body -match 'thinkingBudget') -and ($g25.body -notmatch 'thinkingLevel')) 'gemini-2.5 thinking'
+    $antOff = Build-PPLlmBody 'anthropic' 'claude-opus-4-8' '' $llmMsgs @{ thinking = 'Off' }
+    Check 'llm anthropic thinking off' ($antOff.body -match 'disabled') 'anthropic off'
+    $antHi = Build-PPLlmBody 'anthropic' 'claude-opus-4-8' '' $llmMsgs @{ thinking = 'Medium' }
+    Check 'llm anthropic effort' (($antHi.body -match 'adaptive') -and ($antHi.body -match 'effort') -and ($antHi.body -match 'medium')) 'anthropic effort'
+    Check 'llm effective thinking g3' ((Get-PPLlmEffectiveThinking 'gemini-3.1-pro-preview' 'gemini') -eq 'high') 'g3 eff'
+    Check 'llm lowest thinking g3' ((Get-PPLlmLowestThinking 'gemini-3.1-pro-preview' 'gemini') -eq 'Low') 'g3 low'
+    Check 'llm lowest thinking 2.5 flash' ((Get-PPLlmLowestThinking 'gemini-2.5-flash' 'gemini') -eq 'Off') 'g25flash low'
+    Check 'llm lowest thinking 2.5 pro' ((Get-PPLlmLowestThinking 'gemini-2.5-pro' 'gemini') -eq 'Low') 'g25pro low'
+    Check 'llm effective thinking anthropic' ((Get-PPLlmEffectiveThinking 'claude-opus-4-8' 'anthropic') -eq 'off') 'ant eff'
 
     $pBear = New-PPLlmProvider 'P' 'openai' 'bearer' 'https://x' 'gpt-4o' @() 'KEY123'
     $hb = Resolve-PPLlmAuthHeaders $pBear
@@ -171,6 +192,9 @@ curl -X POST 'https://api.test/v1/users?team=eng' -H 'Accept: application/json' 
     $gsample = '{"candidates":[{"content":{"parts":[{"text":"gem out"}]}}]}'
     $rg = Read-PPLlmResponse 'gemini' @{ ok = $true; statusCode = 200; body = $gsample }
     Check 'llm parse gemini' ($rg.ok -and ($rg.text -eq 'gem out')) "text=$($rg.text)"
+    $gMax = '{"candidates":[{"content":{"role":"model"},"finishReason":"MAX_TOKENS"}],"usageMetadata":{}}'
+    $rgm = Read-PPLlmResponse 'gemini' @{ ok = $true; statusCode = 200; body = $gMax }
+    Check 'llm empty-text note' ($rgm.ok -and ($rgm.text -match 'MAX_TOKENS') -and ($rgm.finishReason -eq 'MAX_TOKENS')) "text=$($rgm.text)"
     $rerr = Read-PPLlmResponse 'openai' @{ ok = $true; statusCode = 401; body = '{"error":"bad key"}' }
     Check 'llm parse error' (-not $rerr.ok) "ok=$($rerr.ok)"
 
@@ -216,6 +240,9 @@ M+Pkvxw6C6TAFQOhMf91bd/JN/OUIgh2ZjYhZhxZbIUNe1TJKdry7WM27LJ7E5SV
     $provFile = '[{"Name":"Vertex Pro","Provider":"VertexAI","Model":"gemini-2.5-pro","Endpoint":"https://aiplatform.googleapis.com/v1/projects/p/locations/global/publishers/google","ClientEmail":"svc@p.iam.gserviceaccount.com","PrivateKey":"-----BEGIN PRIVATE KEY-----\nABC\n-----END PRIVATE KEY-----\n","MaxRetries":8}]'
     $imp = ConvertFrom-PPProviderFile $provFile
     Check 'provider file import' ((@($imp).Count -eq 1) -and ($imp[0].dialect -eq 'gemini') -and ($imp[0].auth -eq 'vertex') -and ($imp[0].model -eq 'gemini-2.5-pro') -and ($imp[0].clientEmail -eq 'svc@p.iam.gserviceaccount.com')) "dialect=$($imp[0].dialect) auth=$($imp[0].auth)"
+    $multiVx = '[{"Provider":"VertexAI","Model":"gemini-2.5-pro","Endpoint":"https://e/publishers/google","ClientEmail":"svc@x","PrivateKey":"k"},{"Provider":"VertexAI","Model":"gemini-3.1-pro-preview","Endpoint":"https://e/publishers/google","ClientEmail":"svc@x","PrivateKey":"k"}]'
+    $cons = ConvertFrom-PPProviderFile $multiVx
+    Check 'provider file consolidates vertex' ((@($cons).Count -eq 1) -and ($cons[0].name -eq 'Google Vertex') -and (@($cons[0].models).Count -eq 2) -and ($cons[0].auth -eq 'vertex')) "count=$(@($cons).Count) models=$(@($cons[0].models).Count)"
 
     # 10. live HTTP (needs network; reported as FAIL if unreachable)
     try {

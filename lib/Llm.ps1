@@ -120,6 +120,9 @@ function Build-PPLlmBody {
     if ($Params -and $Params.ContainsKey('maxTokens')) { $maxTokens = [int]$Params.maxTokens }
     $temp = $null
     if ($Params -and $Params.ContainsKey('temperature') -and "$($Params.temperature)" -ne '') { $temp = [double]$Params.temperature }
+    $think = ''
+    if ($Params -and $Params.ContainsKey('thinking')) { $think = [string]$Params.thinking }
+    $thinkOn = ($think -and $think -ne 'Default')
 
     switch ($Dialect) {
         'anthropic' {
@@ -136,6 +139,10 @@ function Build-PPLlmBody {
             $body = @{ model = $Model; max_tokens = $(if ($maxTokens -gt 0) { $maxTokens } else { 1024 }); messages = $msgs }
             if ($System) { $body.system = $System }
             if ($null -ne $temp) { $body.temperature = $temp }
+            if ($thinkOn) {
+                if ($think -eq 'Off') { $body.thinking = @{ type = 'disabled' } }
+                else { $body.thinking = @{ type = 'adaptive' }; $body.output_config = @{ effort = $think.ToLower() } }
+            }
             return @{ urlSuffix = '/messages'; body = ($body | ConvertTo-Json -Depth 15) }
         }
         'gemini' {
@@ -155,6 +162,16 @@ function Build-PPLlmBody {
             $gen = @{}
             if ($maxTokens -gt 0) { $gen.maxOutputTokens = $maxTokens }
             if ($null -ne $temp) { $gen.temperature = $temp }
+            if ($thinkOn) {
+                # Gemini 3.x uses thinkingLevel (low/medium/high); 2.5 uses thinkingBudget (int).
+                if ($Model -match '(?i)gemini-3') {
+                    $lvl = switch ($think) { 'High' { 'high' } 'Medium' { 'medium' } default { 'low' } }
+                    $gen.thinkingConfig = @{ thinkingLevel = $lvl }
+                } else {
+                    $budget = switch ($think) { 'Off' { 0 } 'Low' { 512 } 'Medium' { 2048 } 'High' { 8192 } default { $null } }
+                    if ($null -ne $budget) { $gen.thinkingConfig = @{ thinkingBudget = $budget } }
+                }
+            }
             if ($gen.Count -gt 0) { $body.generationConfig = $gen }
             return @{ urlSuffix = "/models/$($Model):generateContent"; body = ($body | ConvertTo-Json -Depth 15) }
         }
@@ -178,8 +195,40 @@ function Build-PPLlmBody {
             $body = @{ model = $Model; messages = $msgs }
             if ($maxTokens -gt 0) { $body.max_tokens = $maxTokens }
             if ($null -ne $temp) { $body.temperature = $temp }
+            # reasoning_effort only applies to reasoning models (o-series / gpt-5).
+            if ($thinkOn -and $think -ne 'Off') { $body.reasoning_effort = $think.ToLower() }
             return @{ urlSuffix = '/chat/completions'; body = ($body | ConvertTo-Json -Depth 15) }
         }
+    }
+}
+
+# The model's *effective* thinking level when no thinking param is sent (for the "Default (...)" label).
+function Get-PPLlmEffectiveThinking {
+    param([string]$Model, [string]$Dialect)
+    switch ($Dialect) {
+        'gemini' {
+            if ($Model -match '(?i)gemini-(1\.5|2\.0)') { return 'none' }
+            if ($Model -match '(?i)gemini-[3-9]') { if ($Model -match '(?i)flash') { return 'medium' } else { return 'high' } }
+            if ($Model -match '(?i)gemini-2\.5') { return 'dynamic' }
+            return ''
+        }
+        'anthropic' { return 'off' }
+        default { return 'model default' }
+    }
+}
+
+# The least-thinking option that's safe for a model (Off where it can disable; else the lowest level).
+function Get-PPLlmLowestThinking {
+    param([string]$Model, [string]$Dialect)
+    switch ($Dialect) {
+        'gemini' {
+            if ($Model -match '(?i)gemini-(1\.5|2\.0)') { return 'Default' }  # non-thinking models
+            if ($Model -match '(?i)gemini-[3-9]') { return 'Low' }            # no "off"; low is safe everywhere
+            if ($Model -match '(?i)flash') { return 'Off' }                   # 2.5 flash can disable thinking
+            return 'Low'                                                      # 2.5 pro etc. can't fully disable
+        }
+        'anthropic' { return 'Off' }
+        default { return 'Off' }   # openai: "Off" sends no reasoning_effort (safe on non-reasoning models)
     }
 }
 
@@ -226,15 +275,35 @@ function Read-PPLlmResponse {
     $raw = [string]$Resp.body
     if ($Resp.statusCode -ge 400) { return @{ ok = $false; error = "HTTP $($Resp.statusCode): $raw"; raw = $raw } }
     try { $data = $raw | ConvertFrom-Json -ErrorAction Stop } catch { return @{ ok = $false; error = "Non-JSON response: $raw"; raw = $raw } }
-    $text = ''; $usage = $null
+    $text = ''; $usage = $null; $finish = ''
     try {
         switch ($Dialect) {
-            'anthropic' { foreach ($b in @($data.content)) { if ($b.type -eq 'text') { $text += [string]$b.text } }; $usage = $data.usage }
-            'gemini'    { foreach ($p in @($data.candidates[0].content.parts)) { if ($null -ne $p.text) { $text += [string]$p.text } }; $usage = $data.usageMetadata }
-            default     { $text = [string]$data.choices[0].message.content; $usage = $data.usage }
+            'anthropic' {
+                foreach ($b in @($data.content)) { if ($b.type -eq 'text') { $text += [string]$b.text } }
+                $usage = $data.usage; $finish = [string]$data.stop_reason
+            }
+            'gemini' {
+                $cand = @($data.candidates)[0]
+                foreach ($p in @($cand.content.parts)) { if ($null -ne $p.text) { $text += [string]$p.text } }
+                $usage = $data.usageMetadata; $finish = [string]$cand.finishReason
+            }
+            default {
+                $ch = @($data.choices)[0]
+                $text = [string]$ch.message.content; $usage = $data.usage; $finish = [string]$ch.finish_reason
+            }
         }
     } catch { return @{ ok = $false; error = "Unexpected response shape: $raw"; raw = $raw } }
-    return @{ ok = $true; text = $text; usage = $usage; raw = $raw }
+    if ([string]::IsNullOrEmpty($text)) {
+        # 200 OK but no text — usually the token budget was spent (thinking models) or content was blocked.
+        $note = '(No text returned'
+        if ($finish) { $note += "; finishReason=$finish" }
+        $note += '.)'
+        if ($finish -match 'MAX_TOKENS|length|max_tokens') {
+            $note += ' The token limit was reached before any answer text was produced — thinking models (e.g. Gemini 3.x) spend the budget on reasoning first. Increase Max tok and resend.'
+        }
+        $text = $note
+    }
+    return @{ ok = $true; text = $text; usage = $usage; raw = $raw; finishReason = $finish }
 }
 
 # Full round-trip: expand {{vars}}, build, auth, send, parse. Returns text/usage/raw/request.
@@ -257,33 +326,50 @@ function Invoke-PPLlmChat {
     $url = ($prov.baseUrl.TrimEnd('/')) + $built.urlSuffix
     $resp = Invoke-PPRequest -Method 'POST' -Url $url -AuthHeaders $auth.headers -BodyType 'json' -Body $built.body -TimeoutSec $TimeoutSec
     $parsed = Read-PPLlmResponse $Provider.dialect $resp
-    $parsed.request = @{ url = $url; body = $built.body }
+    # Surface full REST detail for the Playground (status/time/size/headers + exact request).
+    $parsed.request = @{ method = 'POST'; url = $url; headers = $auth.headers; body = $built.body }
+    $parsed.response = $resp
     return $parsed
 }
 
 # Convert an external llm-providers.json (the owner's schema) into PowerPost providers.
-# VertexAI entries map to dialect=gemini, auth=vertex. Other entries are read as-is.
+# VertexAI entries that share an endpoint + service account are consolidated into ONE
+# "Google Vertex" provider whose Model dropdown lists all their models (it's one endpoint +
+# credential — the model is just a selection). Other entries are read as-is.
 function ConvertFrom-PPProviderFile {
     param([string]$JsonText)
     $data = $JsonText | ConvertFrom-Json -ErrorAction Stop
     $providers = @()
+    $vertexByKey = @{}
     foreach ($e in @($data)) {
         $kind = [string](Get-PPProp $e 'Provider' '')
         if ($kind -ieq 'VertexAI') {
-            $p = New-PPLlmProvider
-            $p.name        = [string](Get-PPProp $e 'Name' 'Vertex AI')
-            $p.dialect     = 'gemini'
-            $p.auth        = 'vertex'
-            $p.baseUrl     = [string](Get-PPProp $e 'Endpoint' '')
-            $p.model       = [string](Get-PPProp $e 'Model' '')
-            $p.models      = @($p.model)
-            $p.clientEmail = [string](Get-PPProp $e 'ClientEmail' '')
-            $p.privateKey  = [string](Get-PPProp $e 'PrivateKey' '')
-            $p.maxRetries  = [int](Get-PPProp $e 'MaxRetries' 0)
-            $providers += $p
+            $endpoint = [string](Get-PPProp $e 'Endpoint' '')
+            $email = [string](Get-PPProp $e 'ClientEmail' '')
+            $model = [string](Get-PPProp $e 'Model' '')
+            $key = "$endpoint|$email"
+            if (-not $vertexByKey.ContainsKey($key)) {
+                $p = New-PPLlmProvider
+                $p.name        = 'Google Vertex'
+                $p.dialect     = 'gemini'
+                $p.auth        = 'vertex'
+                $p.baseUrl     = $endpoint
+                $p.clientEmail = $email
+                $p.privateKey  = [string](Get-PPProp $e 'PrivateKey' '')
+                $p.maxRetries  = [int](Get-PPProp $e 'MaxRetries' 0)
+                $p.models      = @()
+                $vertexByKey[$key] = $p
+                $providers += $p
+            }
+            $p = $vertexByKey[$key]
+            if ($model -and (@($p.models) -notcontains $model)) { $p.models = @($p.models) + @($model) }
+            if ([string]::IsNullOrEmpty($p.model) -and $model) { $p.model = $model }
         } else {
             $providers += (Resolve-PPLlmProvider $e)
         }
     }
+    # Disambiguate names if there are multiple distinct Vertex projects.
+    $vn = 0
+    foreach ($p in $providers) { if ($p.auth -eq 'vertex') { $vn++; if ($vn -gt 1) { $p.name = "Google Vertex ($vn)" } } }
     return , $providers
 }

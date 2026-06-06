@@ -127,8 +127,24 @@ Key design points to preserve:
   imports the owner's `VertexAI` file shape). **Vertex** auth signs a service-account JWT via the
   `PPVertexAuth` `Add-Type` C# helper — it hand-parses the PKCS#8 PEM (no `ImportPkcs8PrivateKey`
   on net48) and signs RS256 with `RSACng`; tokens cache on the provider via `Set-PPTokenFromResponse`.
-  Keep `Llm.ps1` UI-free so `-SelfTest` covers builders/parsers/JWT. The Playground is a
-  single-instance modeless window (`$Global:PPApp.llmForm`/`llmCtx`); handlers read `llmCtx`.
+  Keep `Llm.ps1` UI-free so `-SelfTest` covers builders/parsers/JWT. The Playground
+  (`$Global:PPApp.llmForm`/`llmTabs`) is a single-instance modeless window that mirrors the main
+  app's tabbed-editor pattern: a `TabControl` of saved chats, each tab's `.Tag` a ctx with controls
+  + `model` (a `New-PPLlmTab`: provider/model/system/params + `conversation`). Per-tab handlers
+  carry ctx via `control.Tag`. `Invoke-PPLlmChat` returns `request` + full `response`
+  (status/time/size/headers/raw) which `Show-PPLlmDetails` renders into the Response/Resp Headers/
+  Request notebook. Tabs (incl. conversations + the pending attachment queue + `thinking`) persist
+  to `state.llm.tabs` via `Save-PPLlmState` (on the Save button and on window close). The
+  **Thinking** control (Default/Off/Low/Medium/High) maps per dialect in `Build-PPLlmBody`: Gemini
+  3.x → `thinkingConfig.thinkingLevel`, Gemini 2.5 → `thinkingConfig.thinkingBudget`, Anthropic →
+  `thinking`/`output_config.effort`, OpenAI → `reasoning_effort`. When a 200 response has no text,
+  `Read-PPLlmResponse` returns a note carrying the `finishReason` instead of a blank reply.
+  The Playground does **not** auto-save (no `FormClosing` save) — only the **Save** button
+  (`Save-PPLlmState`) persists; `Send-PPLlmMessage` allows any of text / image / system prompt.
+  `ConvertFrom-PPProviderFile` consolidates `VertexAI` entries sharing an endpoint + service account
+  into one "Google Vertex" provider whose model list holds all their models. The tab strip has a
+  right-click menu (New/Duplicate/Rename/Close); `Duplicate-PPLlmTabCmd` deep-copies the tab model
+  (settings + conversation) via a JSON round-trip + `Resolve-PPLlmTab`.
 
 - **Persistence** (`State.ps1`): state saves to `powerpost.state.json` next to the script on
   Ctrl+S and on window close (`Add_FormClosing`). Corrupt files are backed up to `.bak` and a

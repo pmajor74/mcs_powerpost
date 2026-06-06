@@ -47,9 +47,11 @@ product.
 - **cURL import / export** — paste a cURL command (toolbar **Import cURL**) to build a request in
   a new tab, or right-click a tab → **Copy as cURL** / **Copy as PowerShell** to copy a runnable
   snippet of the current request. See [Import & export](#import--export).
-- **LLM Playground** — a chat window for testing LLM endpoints (OpenAI, Anthropic, Gemini AI
-  Studio, and Vertex AI) with text **and image** input. Multi-provider via a small JSON catalog;
-  images are sent the way each provider expects. See [LLM Playground](#llm-playground).
+- **LLM Playground** — a Postman-style, **tabbed** workbench for testing LLM endpoints (OpenAI,
+  Anthropic, Gemini AI Studio, and Vertex AI) with text **and image** input. Each tab is a saved
+  chat (provider/model/system/params + full conversation), and every send shows the underlying
+  REST call (status, time, size, response headers, and the exact request). See
+  [LLM Playground](#llm-playground).
 - **Environments & variables** — define named environments of `{{variable}}` values and switch
   between them from the toolbar. Tokens like `{{baseUrl}}` / `{{token}}` are substituted into the
   URL, params, headers, body, form fields, and auth at send time (the `Request` preview shows the
@@ -165,20 +167,51 @@ providers. It ships knowing four **dialects**:
 | Gemini (AI Studio) | `gemini` | `x-goog-api-key` |
 | Vertex AI (Gemini) | `gemini` | `vertex` — service-account JWT → OAuth token |
 
+The window is **tabbed** like the main app — **New Chat** / **Close Chat**, double-click a tab to
+rename (or right-click for **New / Duplicate / Rename / Close**), and **Save** to persist. Each tab keeps its own provider/model/system/params **and its full
+conversation**, so you can come back to exactly where you were. The Playground **does not auto-save**
+— click **Save** before closing or your unsaved changes are discarded.
+
 Usage:
 
 1. **Providers…** opens a JSON editor of the provider catalog. Fill in your API key (or paste
    `{{var}}` and supply it from an [environment](#environments)). For **Vertex AI**, click
    **Import from file…** and select an `llm-providers.json` (the
-   `Name`/`Provider`/`Model`/`Endpoint`/`ClientEmail`/`PrivateKey` shape) — `VertexAI` entries are
+   `Name`/`Provider`/`Model`/`Endpoint`/`ClientEmail`/`PrivateKey` shape). `VertexAI` entries that
+   share an endpoint + service account are **consolidated into one "Google Vertex" provider** whose
+   Model dropdown lists every model (it's one endpoint + credential — the model is just a choice),
    mapped to the gemini dialect with service-account auth automatically.
-2. Pick a **Provider** and **Model**, optionally set a **System** prompt, **Max tok**, and **Temp**.
-3. Type a message, optionally **Attach image(s)**, and **Send** (or Ctrl+Enter). The reply appears
-   in the transcript; **View raw** shows the last raw JSON response.
+2. Pick a **Provider** and **Model**, optionally set a **System** prompt (multiline), **Max tok**,
+   **Temp**, and **Thinking** (see below).
+3. Type a message and/or **Attach image(s)**, and **Send** (or Ctrl+Enter) — a message, an image
+   alone, or just a system prompt is enough to send. The reply appears
+   in the transcript; the lower **details** pane shows the REST call for that send — **Response**
+   (status / time / size + pretty JSON), **Resp Headers**, and **Request** (the exact URL, headers,
+   and JSON body that went on the wire).
 
 Images are read from disk and encoded the way each provider expects (base64 `image_url` for
 OpenAI, `image` source blocks for Anthropic, `inline_data` for Gemini/Vertex) — so you can OCR or
 describe an image straight from a file path. Non-streaming in this version (send → wait → reply).
+A pending (attached-but-not-yet-sent) image is saved with the tab too, so it survives a save/reload.
+
+**Thinking** controls how much the model reasons before answering, mapped per provider:
+
+| Thinking | Gemini 3.x | Gemini 2.5 | Anthropic | OpenAI |
+| --- | --- | --- | --- | --- |
+| Default | (model default) | (model default) | (model default) | (model default) |
+| Off | `thinkingLevel: low`* | `thinkingBudget: 0` | `thinking: disabled` | — |
+| Low / Medium / High | `thinkingLevel: low/medium/high` | `thinkingBudget: 512 / 2048 / 8192` | adaptive + `effort: low/medium/high` | `reasoning_effort: low/medium/high` |
+
+The **Default** item shows the model's *effective* level in parentheses (e.g. `Default (high)` for
+gemini-3.1-pro, `Default (dynamic)` for gemini-2.5) — i.e. what the model does when PowerPost sends
+no thinking parameter. **New chats start at the least thinking the model supports** (Off where it
+can be disabled, otherwise the lowest level), so you opt *in* to heavier reasoning rather than
+inheriting an expensive default.
+
+\* Gemini 3 models can't fully disable thinking, so **Off** maps to the lowest level. If a specific
+model rejects a setting, the error shows in the **Response** tab — switch **Thinking** back to
+**Default**. Note: thinking models spend the token budget on reasoning first, so pair higher
+thinking with a generous **Max tok** (the default is 4096).
 
 > **Vertex AI** authenticates by signing a JWT with your service-account private key (RS256) and
 > exchanging it for a short-lived access token, which is cached until it expires.
