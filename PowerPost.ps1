@@ -86,8 +86,9 @@ function Invoke-PPSelfTest {
         $s.activeEnv = 'Dev'
         $colRt = New-PPCollection 'Smoke'
         $reqRt = New-PPTab 'Ping'
-        $reqRt.method = 'POST'; $reqRt.url = 'https://example.com/ping'
+        $reqRt.method = 'POST'; $reqRt.url = 'https://example.com/ping'; $reqRt.auth.type = 'inherit'
         $colRt.requests = @($reqRt)
+        $colRt.auth.type = 'bearer'; $colRt.auth.bearerToken = 'COL-TOKEN'
         $s.collections = @($colRt)
         $s.tabs[0].bodyType = 'multipart'
         $s.tabs[0].multipart = @( (New-PPMultipartRow $true 'avatar' 'file' 'C:\pics\me.png'), (New-PPMultipartRow $true 'note' 'text' 'hi') )
@@ -109,6 +110,7 @@ function Invoke-PPSelfTest {
         Check 'state round-trip' (($loaded.tabs.Count -eq 2) -and ($loaded.tabs[0].url -eq 'https://example.com/x') -and ($loaded.tabs[1].name -eq 'Second')) "tabs=$($loaded.tabs.Count)"
         Check 'env round-trip' (($loaded.environments.Count -eq 1) -and ($loaded.activeEnv -eq 'Dev') -and ($loaded.environments[0].variables[0].value -eq 'dev.example.com')) "envs=$($loaded.environments.Count) active=$($loaded.activeEnv)"
         Check 'collection round-trip' (($loaded.collections.Count -eq 1) -and ($loaded.collections[0].name -eq 'Smoke') -and ($loaded.collections[0].requests[0].method -eq 'POST') -and ($loaded.collections[0].requests[0].url -eq 'https://example.com/ping')) "cols=$($loaded.collections.Count)"
+        Check 'collection auth round-trip' (($loaded.collections[0].auth.type -eq 'bearer') -and ($loaded.collections[0].auth.bearerToken -eq 'COL-TOKEN') -and ($loaded.collections[0].requests[0].auth.type -eq 'inherit')) "cAuth=$($loaded.collections[0].auth.type)"
         Check 'multipart round-trip' (($loaded.tabs[0].bodyType -eq 'multipart') -and ($loaded.tabs[0].multipart.Count -eq 2) -and ($loaded.tabs[0].multipart[0].kind -eq 'file') -and ($loaded.tabs[0].multipart[0].value -eq 'C:\pics\me.png')) "mp=$($loaded.tabs[0].multipart.Count)"
         Check 'graphql round-trip' (($loaded.tabs[1].bodyType -eq 'graphql') -and ($loaded.tabs[1].body -eq '{ me { id } }') -and ($loaded.tabs[1].graphqlVars -eq '{"x":1}')) "bt=$($loaded.tabs[1].bodyType)"
         Check 'llm tab round-trip' (($loaded.llm.tabs.Count -eq 1) -and ($loaded.llm.tabs[0].name -eq 'OCR chat') -and ($loaded.llm.tabs[0].model -eq 'gemini-2.5-pro') -and ($loaded.llm.tabs[0].conversation.Count -eq 2) -and ($loaded.llm.tabs[0].conversation[0].images[0] -eq 'C:\x\a.png')) "tabs=$($loaded.llm.tabs.Count) conv=$($loaded.llm.tabs[0].conversation.Count)"
@@ -264,6 +266,24 @@ M+Pkvxw6C6TAFQOhMf91bd/JN/OUIgh2ZjYhZhxZbIUNe1TJKdry7WM27LJ7E5SV
     Import-PPCookies $cj2 $exp
     $all2 = Get-PPAllCookies $cj2
     Check 'cookie export/import' ((@($exp).Count -eq 2) -and (@($all2).Count -eq 2) -and (@($all2 | Where-Object { $_.Name -eq 'sid' -and $_.Value -eq 'abc' }).Count -eq 1)) "exp=$(@($exp).Count) imp=$(@($all2).Count)"
+
+    # 11c. bulk-edit text <-> KV rows
+    $kvRows = @( (New-PPKv $true 'Accept' 'application/json'), (New-PPKv $false 'X-Debug' '1'), (New-PPKv $true 'Authorization' 'Bearer abc') )
+    $kvText = ConvertTo-PPKvText $kvRows
+    Check 'kv to text' (($kvText -match 'Accept: application/json') -and ($kvText -match '//X-Debug: 1')) "text=$kvText"
+    $back = ConvertFrom-PPKvText $kvText
+    Check 'kv from text' ((@($back).Count -eq 3) -and ($back[0].enabled) -and (-not $back[1].enabled) -and ($back[1].key -eq 'X-Debug') -and ($back[2].value -eq 'Bearer abc')) "n=$(@($back).Count)"
+
+    # 11a. collection-level inherited auth
+    $colA = New-PPCollection 'C'; $colA.auth.type = 'bearer'; $colA.auth.bearerToken = 'INHERITED'
+    $reqI = New-PPTab 'r'; $reqI.auth.type = 'inherit'
+    $eff = Resolve-PPInheritedAuth $reqI.auth $colA.auth
+    Check 'inherited auth resolves' (($eff.type -eq 'bearer') -and ($eff.bearerToken -eq 'INHERITED')) "type=$($eff.type)"
+    $reqOwn = New-PPTab 'r2'; $reqOwn.auth.type = 'basic'; $reqOwn.auth.basicUser = 'me'
+    $eff2 = Resolve-PPInheritedAuth $reqOwn.auth $colA.auth
+    Check 'own auth kept' (($eff2.type -eq 'basic') -and ($eff2.basicUser -eq 'me')) "type=$($eff2.type)"
+    $inh = Resolve-PPAuthHeaders @{ type = 'inherit'; accessToken = ''; tokenExpiry = '' }
+    Check 'inherit -> no headers' ($inh.ok -and (@($inh.headers).Count -eq 0)) "hdrs=$(@($inh.headers).Count)"
 
     # 11b. GraphQL body builder + cURL export
     $gqlBody = ConvertTo-PPGraphQLBody '{ user { id } }' '{"id":5}'

@@ -12,11 +12,13 @@ single folder of scripts — nothing to install, no dependencies to restore — 
 hitting your own internal APIs. A [Major Computing Systems](https://majorcomputingsystems.ca)
 product.
 
-<!-- Add a screenshot at docs/screenshot.png to show it here -->
-![MCS PowerPost](docs/screenshot.png)
+![MCS PowerPost](docs/img/main.png)
+
+📸 **See the [Feature Tour](features.md)** for a screenshot-by-screenshot walkthrough of every feature.
 
 ## Table of contents
 
+- [Feature Tour (with screenshots)](features.md)
 - [Features](#features)
 - [Getting started](#getting-started)
 - [Usage](#usage)
@@ -34,6 +36,8 @@ product.
 - [About](#about)
 
 ## Features
+
+> 📸 Prefer pictures? The **[Feature Tour](features.md)** walks through each feature with screenshots.
 
 - **Tabs** — each tab is an open request (method, URL, params, headers, body). Rename by
   double-clicking the tab header or right-click → Rename; Duplicate and Close from the
@@ -60,7 +64,8 @@ product.
   URL, params, headers, body, form fields, and auth at send time (the `Request` preview shows the
   resolved values). See [Environments](#environments).
 - **Params / Headers** — enable/disable individual rows; params are merged into the query
-  string at send time.
+  string at send time. Each has a **Bulk edit** toggle to edit them as `key: value` text
+  (one per line; prefix `//` to disable a row).
 - **Body** — `No body`, `JSON`, `Text`, `Form URL-encoded`, `Multipart form-data`
   (text **and file** fields, for uploads), or `GraphQL` (query + JSON variables, sent as
   `{"query":…,"variables":…}`) — the right `Content-Type` is set automatically.
@@ -73,6 +78,8 @@ product.
     their expiry and auto-refreshed on Send.
   - **OAuth2 Authorization Code (+ PKCE)** — opens your browser to sign in, captures the
     redirect on `http://localhost:<port>/`, and exchanges the code for a token.
+  - **Inherit (collection)** — use the parent collection's auth (set via right-click a collection →
+    **Collection auth…**); resolved into the request when you open it from the collection.
 - **Response** — status code + reason, elapsed time and size; pretty-printed JSON body,
   raw body, and a response-headers grid; **find-in-response** (search box with next/prev over the
   Body/Raw/Request views); Copy and Save-to-file.
@@ -129,6 +136,8 @@ Tabs are your working set; **collections** are your saved library. Use the sideb
 3. **Double-click** a saved request to open it in a new tab. It opens as a *copy*, so editing the
    tab doesn't change the saved request until you save again.
 4. Right-click any node to **Rename**, **Duplicate** (requests), or **Delete**.
+5. Right-click a collection → **Collection auth…** to set a default auth. Requests whose Auth is
+   **Inherit (collection)** pick it up when opened from that collection.
 
 Collections are saved in `powerpost.state.json` alongside your open tabs, so your library persists
 between sessions. Saved requests use the same format as tabs, so everything — params, headers,
@@ -297,8 +306,9 @@ Planned features to bring MCS PowerPost closer to Postman, roughly in priority o
 - ~~**Cookie jar**~~ — ✅ shipped: shared cookie store across requests (Tools → Cookies).
 - ~~**OpenAPI/Postman import**~~ — ✅ shipped: Tools → Import collection.
 - ~~**GraphQL bodies**~~ — ✅ shipped: query + variables body type.
-- Later: pre-request/post-response tests, saved response examples,
-  bulk-edit headers/params, collection-level auth.
+- ~~**Collection-level auth**~~ — ✅ shipped: per-collection default auth + request **Inherit**.
+- ~~**Bulk-edit headers/params**~~ — ✅ shipped: `key: value` text toggle.
+- Later: pre-request/post-response tests, saved response examples.
 
 ## License
 

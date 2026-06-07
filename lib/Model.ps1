@@ -68,9 +68,19 @@ function New-PPEnvironment {
 }
 
 # A collection is a named, saved group of requests (each request is a New-PPTab-shaped model).
+# `auth` is the collection default that requests with auth.type='inherit' resolve to on open.
 function New-PPCollection {
     param([string]$Name = 'New Collection')
-    return @{ name = $Name; requests = @() }
+    return @{ name = $Name; requests = @(); auth = (New-PPAuth) }
+}
+
+# If a request's auth is 'inherit', return a deep copy of the collection's auth; else its own auth.
+function Resolve-PPInheritedAuth {
+    param($Auth, $CollectionAuth)
+    if ($null -ne $Auth -and $Auth.type -eq 'inherit' -and $null -ne $CollectionAuth) {
+        return (Resolve-PPAuth ($CollectionAuth | ConvertTo-Json -Depth 20 | ConvertFrom-Json))
+    }
+    return $Auth
 }
 
 # An LLM provider entry. One shape covers every auth type; unused fields stay empty.
@@ -131,6 +141,36 @@ function New-PPState {
 }
 
 # --- normalization: turn parsed JSON (PSCustomObject) into our hashtable model ---
+
+# Serialize key/value rows to bulk-edit text ("key: value" per line; "//" prefix = disabled).
+function ConvertTo-PPKvText {
+    param($Rows)
+    $lines = @()
+    foreach ($r in @($Rows)) {
+        if ($null -eq $r) { continue }
+        if ([string]::IsNullOrEmpty([string]$r.key) -and [string]::IsNullOrEmpty([string]$r.value)) { continue }
+        $prefix = if ($r.enabled) { '' } else { '//' }
+        $lines += ($prefix + [string]$r.key + ': ' + [string]$r.value)
+    }
+    return ($lines -join "`r`n")
+}
+
+# Parse bulk-edit text back into key/value rows.
+function ConvertFrom-PPKvText {
+    param([string]$Text)
+    $rows = @()
+    foreach ($line in ($Text -split "`r?`n")) {
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        $enabled = $true
+        $t = $line.TrimStart()
+        if ($t.StartsWith('//')) { $enabled = $false; $t = $t.Substring(2) }
+        $idx = $t.IndexOf(':')
+        if ($idx -lt 0) { $k = $t.Trim(); $v = '' } else { $k = $t.Substring(0, $idx).Trim(); $v = $t.Substring($idx + 1).Trim() }
+        if ([string]::IsNullOrEmpty($k) -and [string]::IsNullOrEmpty($v)) { continue }
+        $rows += (New-PPKv $enabled $k $v)
+    }
+    return , $rows
+}
 
 function Resolve-PPKv {
     param($Raw)
@@ -221,6 +261,7 @@ function Resolve-PPCollection {
     $reqs = @()
     foreach ($rr in @(Get-PPProp $Raw 'requests' @())) { $reqs += (Resolve-PPTab $rr) }
     $c.requests = $reqs
+    $c.auth = Resolve-PPAuth (Get-PPProp $Raw 'auth' $null)
     return $c
 }
 

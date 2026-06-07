@@ -51,6 +51,51 @@ function Get-PPKvGrid {
     return , $list
 }
 
+# A key/value editor: a grid plus a "Bulk edit" toggle that swaps it for a text box
+# (one "key: value" per line; "//" prefix disables a row). Returns @{ panel; grid; bulk; toggle }.
+function New-PPKvEditor {
+    $panel = New-Object System.Windows.Forms.Panel; $panel.Dock = 'Fill'
+    $bar = New-Object System.Windows.Forms.Panel; $bar.Dock = 'Top'; $bar.Height = 24
+    $chk = New-Object System.Windows.Forms.CheckBox; $chk.Text = 'Bulk edit'; $chk.Dock = 'Left'; $chk.Width = 84
+    $hint = New-Object System.Windows.Forms.Label
+    $hint.Text = 'one per line:  key: value   (prefix // to disable)'; $hint.Dock = 'Fill'; $hint.TextAlign = 'MiddleLeft'; $hint.ForeColor = [System.Drawing.Color]::Gray
+    $bar.Controls.Add($hint); $bar.Controls.Add($chk)
+    $card = New-Object System.Windows.Forms.Panel; $card.Dock = 'Fill'
+    $grid = New-PPKvGrid
+    $bulk = New-PPMultiline
+    $bulk.Visible = $false
+    $card.Controls.Add($grid); $card.Controls.Add($bulk)
+    $panel.Controls.Add($card); $panel.Controls.Add($bar)
+
+    $editor = @{ panel = $panel; grid = $grid; bulk = $bulk; toggle = $chk }
+    $chk.Tag = $editor
+    $chk.Add_CheckedChanged({
+        $e = $this.Tag
+        if ($this.Checked) {
+            $e.bulk.Text = ConvertTo-PPKvText (Get-PPKvGrid $e.grid)
+            $e.grid.Visible = $false; $e.bulk.Visible = $true; $e.bulk.BringToFront()
+        } else {
+            Set-PPKvGrid $e.grid (ConvertFrom-PPKvText $e.bulk.Text)
+            $e.bulk.Visible = $false; $e.grid.Visible = $true; $e.grid.BringToFront()
+        }
+    })
+    return $editor
+}
+
+# Read rows from a KV editor, honoring whichever view (grid or bulk text) is active.
+function Get-PPKvEditorRows {
+    param($Editor)
+    if ($Editor.toggle.Checked) { return ConvertFrom-PPKvText $Editor.bulk.Text }
+    return Get-PPKvGrid $Editor.grid
+}
+
+# Load rows into a KV editor (updates the active view too).
+function Set-PPKvEditor {
+    param($Editor, $Rows)
+    Set-PPKvGrid $Editor.grid $Rows
+    if ($Editor.toggle.Checked) { $Editor.bulk.Text = ConvertTo-PPKvText $Rows }
+}
+
 # --- multipart/form-data grid (text or file fields) ---
 
 function New-PPMultipartGrid {
@@ -169,7 +214,7 @@ function New-PPAuthPanel {
     $combo = New-Object System.Windows.Forms.ComboBox
     $combo.Dock = 'Top'
     $combo.DropDownStyle = 'DropDownList'
-    [void]$combo.Items.AddRange(@('None', 'Bearer / JWT', 'Basic', 'OAuth2 Client Credentials', 'OAuth2 Authorization Code'))
+    [void]$combo.Items.AddRange(@('None', 'Bearer / JWT', 'Basic', 'OAuth2 Client Credentials', 'OAuth2 Authorization Code', 'Inherit (collection)'))
 
     $cards = New-Object System.Windows.Forms.Panel
     $cards.Dock = 'Fill'
@@ -182,6 +227,14 @@ function New-PPAuthPanel {
     $lblNone.Text = 'No authentication will be sent.'; $lblNone.Dock = 'Top'; $lblNone.Padding = New-Object System.Windows.Forms.Padding(6)
     $pNone.Controls.Add($lblNone)
     $refs.panels['none'] = $pNone
+
+    # Inherit (collection)
+    $pInherit = New-Object System.Windows.Forms.Panel; $pInherit.Dock = 'Fill'
+    $lblInherit = New-Object System.Windows.Forms.Label
+    $lblInherit.Text = "Uses the parent collection's auth (resolved when this request is opened from a collection)."
+    $lblInherit.Dock = 'Top'; $lblInherit.Height = 44; $lblInherit.Padding = New-Object System.Windows.Forms.Padding(6)
+    $pInherit.Controls.Add($lblInherit)
+    $refs.panels['inherit'] = $pInherit
 
     # Bearer
     $pBearer = New-PPFieldTable
@@ -253,11 +306,11 @@ function New-PPAuthPanel {
 # Map between the friendly combo text and the internal auth type code.
 $script:PPAuthTypeToText = @{
     'none' = 'None'; 'bearer' = 'Bearer / JWT'; 'basic' = 'Basic'
-    'clientcreds' = 'OAuth2 Client Credentials'; 'authcode' = 'OAuth2 Authorization Code'
+    'clientcreds' = 'OAuth2 Client Credentials'; 'authcode' = 'OAuth2 Authorization Code'; 'inherit' = 'Inherit (collection)'
 }
 $script:PPAuthTextToType = @{
     'None' = 'none'; 'Bearer / JWT' = 'bearer'; 'Basic' = 'basic'
-    'OAuth2 Client Credentials' = 'clientcreds'; 'OAuth2 Authorization Code' = 'authcode'
+    'OAuth2 Client Credentials' = 'clientcreds'; 'OAuth2 Authorization Code' = 'authcode'; 'Inherit (collection)' = 'inherit'
 }
 
 function Show-PPAuthCard {
@@ -266,5 +319,44 @@ function Show-PPAuthCard {
         $vis = ($key -eq $Type)
         $Refs.panels[$key].Visible = $vis
         if ($vis) { $Refs.panels[$key].BringToFront() }
+    }
+}
+
+# Populate an auth panel's controls from an auth model (reused by request tabs + the
+# collection-auth dialog).
+function Set-PPAuthRefs {
+    param($Refs, $Auth)
+    $Refs.typeCombo.SelectedItem = $script:PPAuthTypeToText[$Auth.type]
+    $Refs.bearerBox.Text = $Auth.bearerToken
+    $Refs.basicUser.Text = $Auth.basicUser; $Refs.basicPass.Text = $Auth.basicPass
+    $Refs.ccTokenUrl.Text = $Auth.tokenUrl; $Refs.ccClientId.Text = $Auth.clientId
+    $Refs.ccClientSecret.Text = $Auth.clientSecret; $Refs.ccScope.Text = $Auth.scope
+    $Refs.ccStyle.SelectedIndex = $(if ($Auth.clientAuthStyle -eq 'header') { 1 } else { 0 })
+    $Refs.acAuthUrl.Text = $Auth.authUrl; $Refs.acTokenUrl.Text = $Auth.tokenUrl; $Refs.acClientId.Text = $Auth.clientId
+    $Refs.acClientSecret.Text = $Auth.clientSecret; $Refs.acScope.Text = $Auth.scope
+    $Refs.acPort.Text = [string]$Auth.redirectPort; $Refs.acPkce.Checked = [bool]$Auth.usePkce
+    if ($Auth.accessToken) { $Refs.ccStatus.Text = 'Cached token present.'; $Refs.acStatus.Text = 'Cached token present.' }
+    Show-PPAuthCard $Refs $Auth.type
+}
+
+# Read an auth panel's controls back into an auth model (mutates $Auth in place so cached
+# token fields are preserved).
+function Set-PPAuthModel {
+    param($Auth, $Refs)
+    $Auth.type = $script:PPAuthTextToType[[string]$Refs.typeCombo.SelectedItem]
+    $Auth.bearerToken = $Refs.bearerBox.Text
+    $Auth.basicUser = $Refs.basicUser.Text; $Auth.basicPass = $Refs.basicPass.Text
+    switch ($Auth.type) {
+        'clientcreds' {
+            $Auth.tokenUrl = $Refs.ccTokenUrl.Text; $Auth.clientId = $Refs.ccClientId.Text
+            $Auth.clientSecret = $Refs.ccClientSecret.Text; $Auth.scope = $Refs.ccScope.Text
+            $Auth.clientAuthStyle = $(if ($Refs.ccStyle.SelectedIndex -eq 1) { 'header' } else { 'body' })
+        }
+        'authcode' {
+            $Auth.authUrl = $Refs.acAuthUrl.Text; $Auth.tokenUrl = $Refs.acTokenUrl.Text
+            $Auth.clientId = $Refs.acClientId.Text; $Auth.clientSecret = $Refs.acClientSecret.Text
+            $Auth.scope = $Refs.acScope.Text; $Auth.usePkce = [bool]$Refs.acPkce.Checked
+            $p = 8080; [void][int]::TryParse($Refs.acPort.Text, [ref]$p); $Auth.redirectPort = $p
+        }
     }
 }

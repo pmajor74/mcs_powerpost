@@ -163,6 +163,10 @@ function Resolve-PPAuthHeaders {
             }
             return @{ ok = $true; headers = @(@{ key = 'Authorization'; value = "Bearer $($Auth.accessToken)" }) }
         }
+        'inherit' {
+            # Resolved to the collection's auth when opened from a collection; standalone -> none.
+            return @{ ok = $true; headers = @() }
+        }
         default { return @{ ok = $true; headers = @() } }
     }
 }

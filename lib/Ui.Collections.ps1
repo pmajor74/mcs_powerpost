@@ -62,10 +62,46 @@ function Save-PPRequestToCollectionCmd {
 }
 
 # Open the selected saved request as a new editable tab (a copy — edits don't touch the saved one).
+# If the request inherits auth, resolve it from the parent collection at open time.
 function Open-PPRequestCmd {
     $node = $Global:PPApp.tree.SelectedNode
     if (-not $node -or $node.Tag.kind -ne 'request') { return }
-    Add-PPTabPage (Copy-PPTab $node.Tag.req) $true | Out-Null
+    $clone = Copy-PPTab $node.Tag.req
+    $clone.auth = Resolve-PPInheritedAuth $clone.auth $node.Tag.col.auth
+    Add-PPTabPage $clone $true | Out-Null
+}
+
+# Edit a collection's default auth (inherited by its requests with auth = Inherit).
+function Show-PPCollectionAuthCmd {
+    $node = $Global:PPApp.tree.SelectedNode
+    if (-not $node -or $node.Tag.kind -ne 'collection') { return }
+    $col = $node.Tag.col
+
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = "Collection auth - $($col.name)"; $dlg.FormBorderStyle = 'Sizable'; $dlg.StartPosition = 'CenterParent'
+    $dlg.MinimizeBox = $false; $dlg.MaximizeBox = $false; $dlg.ShowInTaskbar = $false
+    $dlg.ClientSize = New-Object System.Drawing.Size(440, 340); $dlg.MinimumSize = New-Object System.Drawing.Size(380, 280)
+
+    $built = New-PPAuthPanel
+    $built.panel.Dock = 'Fill'
+    # collection auth is a template: hide the per-request OAuth "Get Token" buttons
+    $built.refs.ccGetBtn.Visible = $false; $built.refs.acGetBtn.Visible = $false
+
+    $foot = New-Object System.Windows.Forms.FlowLayoutPanel
+    $foot.Dock = 'Bottom'; $foot.Height = 48; $foot.FlowDirection = 'RightToLeft'; $foot.Padding = New-Object System.Windows.Forms.Padding(8)
+    $ok = New-Object System.Windows.Forms.Button; $ok.Text = 'OK'; $ok.Size = New-Object System.Drawing.Size(84, 28)
+    $cancel = New-Object System.Windows.Forms.Button; $cancel.Text = 'Cancel'; $cancel.Size = New-Object System.Drawing.Size(84, 28)
+    $foot.Controls.Add($ok); $foot.Controls.Add($cancel)
+
+    $dlg.Controls.Add($built.panel); $dlg.Controls.Add($foot)
+    $dlg.AcceptButton = $ok; $dlg.CancelButton = $cancel
+
+    $built.refs.typeCombo.Add_SelectedIndexChanged({ Show-PPAuthCard $built.refs ($script:PPAuthTextToType[[string]$this.SelectedItem]) })
+    Set-PPAuthRefs $built.refs $col.auth
+    $ok.Add_Click({ Set-PPAuthModel $col.auth $built.refs; $dlg.DialogResult = [System.Windows.Forms.DialogResult]::OK; $dlg.Close() })
+    $cancel.Add_Click({ $dlg.DialogResult = [System.Windows.Forms.DialogResult]::Cancel; $dlg.Close() })
+
+    [void]$dlg.ShowDialog($Global:PPApp.form); $dlg.Dispose()
 }
 
 function Rename-PPTreeNodeCmd {
@@ -142,12 +178,14 @@ function Build-PPCollectionsSidebar {
     [void]$menu.Items.Add('-')
     $miRen  = $menu.Items.Add('Rename');                   $miRen.Tag  = 'any'
     $miDup  = $menu.Items.Add('Duplicate Request');        $miDup.Tag  = 'request'
+    $miAuth = $menu.Items.Add('Collection auth...');       $miAuth.Tag = 'collection'
     $miDel  = $menu.Items.Add('Delete');                   $miDel.Tag  = 'any'
     $miOpen.Add_Click({ Open-PPRequestCmd })
     $miNew.Add_Click({ New-PPCollectionCmd })
     $miAdd.Add_Click({ Save-PPRequestToCollectionCmd })
     $miRen.Add_Click({ Rename-PPTreeNodeCmd })
     $miDup.Add_Click({ Duplicate-PPRequestCmd })
+    $miAuth.Add_Click({ Show-PPCollectionAuthCmd })
     $miDel.Add_Click({ Delete-PPTreeNodeCmd })
     $menu.Add_Opening({
         $node = $Global:PPApp.tree.SelectedNode
@@ -156,9 +194,10 @@ function Build-PPCollectionsSidebar {
             $need = [string]$it.Tag
             if (-not $need) { continue }   # separators
             switch ($need) {
-                'request' { $it.Enabled = ($kind -eq 'request') }
-                'any'     { $it.Enabled = ($kind -eq 'request' -or $kind -eq 'collection') }
-                default   { $it.Enabled = $true }
+                'request'    { $it.Enabled = ($kind -eq 'request') }
+                'collection' { $it.Enabled = ($kind -eq 'collection') }
+                'any'        { $it.Enabled = ($kind -eq 'request' -or $kind -eq 'collection') }
+                default      { $it.Enabled = $true }
             }
         }
     })

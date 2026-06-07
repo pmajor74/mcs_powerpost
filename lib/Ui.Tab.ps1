@@ -90,10 +90,10 @@ function New-PPRequestTab {
     $innerTabs = New-Object System.Windows.Forms.TabControl; $innerTabs.Dock = 'Fill'
 
     $pgParams = New-Object System.Windows.Forms.TabPage; $pgParams.Text = 'Params'; $pgParams.UseVisualStyleBackColor = $true
-    $paramsGrid = New-PPKvGrid; $pgParams.Controls.Add($paramsGrid)
+    $paramsEditor = New-PPKvEditor; $paramsGrid = $paramsEditor.grid; $pgParams.Controls.Add($paramsEditor.panel)
 
     $pgHeaders = New-Object System.Windows.Forms.TabPage; $pgHeaders.Text = 'Headers'; $pgHeaders.UseVisualStyleBackColor = $true
-    $headersGrid = New-PPKvGrid; $pgHeaders.Controls.Add($headersGrid)
+    $headersEditor = New-PPKvEditor; $headersGrid = $headersEditor.grid; $pgHeaders.Controls.Add($headersEditor.panel)
 
     $pgBody = New-Object System.Windows.Forms.TabPage; $pgBody.Text = 'Body'; $pgBody.UseVisualStyleBackColor = $true
     $bodyTypeCombo = New-Object System.Windows.Forms.ComboBox; $bodyTypeCombo.DropDownStyle = 'DropDownList'; $bodyTypeCombo.Dock = 'Top'
@@ -157,6 +157,7 @@ function New-PPRequestTab {
     # ---------- stash refs ----------
     $ctx.methodCombo = $methodCombo; $ctx.urlBox = $urlBox; $ctx.sendBtn = $sendBtn
     $ctx.paramsGrid = $paramsGrid; $ctx.headersGrid = $headersGrid
+    $ctx.paramsEditor = $paramsEditor; $ctx.headersEditor = $headersEditor
     $ctx.bodyTypeCombo = $bodyTypeCombo; $ctx.bodyBox = $bodyBox; $ctx.formGrid = $formGrid; $ctx.multipartGrid = $multipartGrid
     $ctx.gqlPanel = $gqlPanel; $ctx.gqlQuery = $gqlQuery; $ctx.gqlVarsBox = $gqlVarsBox
     $ctx.auth = $authBuilt
@@ -217,8 +218,8 @@ function Set-PPControlsFromModel {
     if ($script:PPMethods -notcontains $m.method) { [void]$Ctx.methodCombo.Items.Add($m.method) }
     $Ctx.methodCombo.SelectedItem = $m.method
     $Ctx.urlBox.Text = $m.url
-    Set-PPKvGrid $Ctx.paramsGrid $m.params
-    Set-PPKvGrid $Ctx.headersGrid $m.headers
+    Set-PPKvEditor $Ctx.paramsEditor $m.params
+    Set-PPKvEditor $Ctx.headersEditor $m.headers
     $Ctx.bodyTypeCombo.SelectedItem = $script:PPBodyTypeToText[$m.bodyType]
     $Ctx.bodyBox.Text = $m.body
     $Ctx.gqlQuery.Text = $m.body
@@ -226,20 +227,7 @@ function Set-PPControlsFromModel {
     Set-PPKvGrid $Ctx.formGrid $m.form
     Set-PPMultipartGrid $Ctx.multipartGrid $m.multipart
 
-    $r = $Ctx.auth.refs; $a = $m.auth
-    $r.typeCombo.SelectedItem = $script:PPAuthTypeToText[$a.type]
-    $r.bearerBox.Text = $a.bearerToken
-    $r.basicUser.Text = $a.basicUser; $r.basicPass.Text = $a.basicPass
-    $r.ccTokenUrl.Text = $a.tokenUrl; $r.ccClientId.Text = $a.clientId
-    $r.ccClientSecret.Text = $a.clientSecret; $r.ccScope.Text = $a.scope
-    $r.ccStyle.SelectedIndex = $(if ($a.clientAuthStyle -eq 'header') { 1 } else { 0 })
-    $r.acAuthUrl.Text = $a.authUrl; $r.acTokenUrl.Text = $a.tokenUrl; $r.acClientId.Text = $a.clientId
-    $r.acClientSecret.Text = $a.clientSecret; $r.acScope.Text = $a.scope
-    $r.acPort.Text = [string]$a.redirectPort; $r.acPkce.Checked = [bool]$a.usePkce
-    if ($a.accessToken) {
-        $r.ccStatus.Text = 'Cached token present.'; $r.acStatus.Text = 'Cached token present.'
-    }
-    Show-PPAuthCard $r $a.type
+    Set-PPAuthRefs $Ctx.auth.refs $m.auth
     Update-PPBodyCard $Ctx
 }
 
@@ -248,8 +236,8 @@ function Sync-PPTabToModel {
     $m = $Ctx.model
     $m.method = [string]$Ctx.methodCombo.SelectedItem
     $m.url = $Ctx.urlBox.Text
-    $m.params = Get-PPKvGrid $Ctx.paramsGrid
-    $m.headers = Get-PPKvGrid $Ctx.headersGrid
+    $m.params = Get-PPKvEditorRows $Ctx.paramsEditor
+    $m.headers = Get-PPKvEditorRows $Ctx.headersEditor
     $m.bodyType = $script:PPBodyTextToType[[string]$Ctx.bodyTypeCombo.SelectedItem]
     $m.graphqlVars = $Ctx.gqlVarsBox.Text
     $m.body = if ($m.bodyType -eq 'graphql') { $Ctx.gqlQuery.Text } else { $Ctx.bodyBox.Text }
@@ -261,23 +249,7 @@ function Sync-PPTabToModel {
 
 function Sync-PPAuthToModel {
     param($Ctx)
-    $a = $Ctx.model.auth; $r = $Ctx.auth.refs
-    $a.type = $script:PPAuthTextToType[[string]$r.typeCombo.SelectedItem]
-    $a.bearerToken = $r.bearerBox.Text
-    $a.basicUser = $r.basicUser.Text; $a.basicPass = $r.basicPass.Text
-    switch ($a.type) {
-        'clientcreds' {
-            $a.tokenUrl = $r.ccTokenUrl.Text; $a.clientId = $r.ccClientId.Text
-            $a.clientSecret = $r.ccClientSecret.Text; $a.scope = $r.ccScope.Text
-            $a.clientAuthStyle = $(if ($r.ccStyle.SelectedIndex -eq 1) { 'header' } else { 'body' })
-        }
-        'authcode' {
-            $a.authUrl = $r.acAuthUrl.Text; $a.tokenUrl = $r.acTokenUrl.Text
-            $a.clientId = $r.acClientId.Text; $a.clientSecret = $r.acClientSecret.Text
-            $a.scope = $r.acScope.Text; $a.usePkce = [bool]$r.acPkce.Checked
-            $p = 8080; [void][int]::TryParse($r.acPort.Text, [ref]$p); $a.redirectPort = $p
-        }
-    }
+    Set-PPAuthModel $Ctx.model.auth $Ctx.auth.refs
 }
 
 function Update-PPBodyCard {

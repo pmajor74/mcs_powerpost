@@ -74,6 +74,11 @@ Key design points to preserve:
   `ok`/`error` rather than throwing; callers branch on `.ok`. Content-type headers must be set
   on the content object, not the request (see the `^Content-` handling).
 
+- **Bulk edit** (`Ui.Controls.ps1` + `Model.ps1`): Params/Headers use `New-PPKvEditor` (grid + a
+  "Bulk edit" toggle that swaps to a `key: value`-per-line textbox; `//` = disabled). `Get-PPKvEditorRows`
+  reads whichever view is active; `ConvertTo-PPKvText`/`ConvertFrom-PPKvText` (in `Model.ps1`, unit-tested)
+  do the text↔rows conversion. Ui.Tab routes Set/Sync through the editor.
+
 - **Body types** (`bodyType`): `none|json|text|form|multipart|graphql`. `graphql` stores the query
   in `body` and JSON variables in `graphqlVars`; `ConvertTo-PPGraphQLBody` (`Http.ps1`) builds
   `{"query":…,"variables":…}` (reused by the request preview and cURL export) and is sent as
@@ -89,6 +94,12 @@ Key design points to preserve:
   PowerShell scriptblock: the callback fires on a background thread with no runspace where a
   scriptblock would throw and break every HTTPS request. The "Ignore SSL errors" toggle flips
   `[PPCertPolicy]::IgnoreErrors`. Don't replace this with a scriptblock callback.
+
+- **Collection-level auth** (`Model.ps1` + `Ui.Collections.ps1`): a collection has its own `auth`;
+  a request's auth type can be `inherit`. `Open-PPRequestCmd` calls `Resolve-PPInheritedAuth` to copy
+  the collection's auth into the opened tab (resolved at open — tabs are detached copies). The auth
+  panel's load/save logic is `Set-PPAuthRefs`/`Set-PPAuthModel` (`Ui.Controls.ps1`), reused by both
+  request tabs and the `Show-PPCollectionAuthCmd` dialog. Standalone `inherit` sends no auth.
 
 - **Auth** (`Auth.ps1`): `Resolve-PPAuthHeaders` produces the outgoing `Authorization`
   header and auto-fetches/refreshes client-credentials tokens when missing/expired. Tokens
