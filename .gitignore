@@ -1,3 +1,6 @@
 # PowerPost saved state holds plaintext dev credentials — never commit it.
 powerpost.state.json
 powerpost.state.json.bak
+
+# Local-only Claude Code guidance (kept on disk, not tracked).
+CLAUDE.md

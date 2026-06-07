@@ -31,7 +31,6 @@ product.
 - [Security](#security)
 - [Validate the build](#validate-the-build)
 - [Project layout](#project-layout)
-- [Roadmap](#roadmap)
 - [License](#license)
 - [About](#about)
 
@@ -295,28 +294,6 @@ lib\Ui.Tab.ps1       per-tab editor + response panel (incl. find-in-response) + 
 lib\Ui.Send.ps1      send, render response, fetch tokens, save response
 lib\Ui.Main.ps1      main window, toolbar, tab management, save/close, About
 ```
-
-## Roadmap
-
-Planned features to bring MCS PowerPost closer to Postman, roughly in priority order:
-
-- ~~**Environments & variables**~~ — ✅ shipped: `{{baseUrl}}` / `{{token}}` substitution with
-  switchable environments.
-- ~~**Collections**~~ — ✅ shipped: a saved-request sidebar tree alongside the tabs.
-- ~~**cURL import / export**~~ — ✅ shipped: paste cURL to build a request; copy as cURL or PowerShell.
-- ~~**multipart/form-data**~~ — ✅ shipped: text + file-upload request bodies.
-- ~~**Request history**~~ — ✅ shipped: recent sends with one-click reload (Tools → Request history).
-- ~~**Response search**~~ — ✅ shipped: find-in-response with next/prev.
-- ~~**Settings UI**~~ — ✅ shipped: timeout, follow-redirects, and proxy (Tools → Settings).
-- ~~**Cookie jar**~~ — ✅ shipped: shared cookie store across requests (Tools → Cookies).
-- ~~**OpenAPI/Postman import**~~ — ✅ shipped: Tools → Import collection.
-- ~~**GraphQL bodies**~~ — ✅ shipped: query + variables body type.
-- ~~**Collection-level auth**~~ — ✅ shipped: per-collection default auth + request **Inherit**.
-- ~~**Bulk-edit headers/params**~~ — ✅ shipped: `key: value` text toggle.
-- ~~**Post-response tests**~~ — ✅ shipped: declarative assertions with pass/fail results.
-- ~~**Saved response examples**~~ — ✅ shipped: snapshot + re-view responses per request.
-
-**Every feature on the original roadmap is now shipped** — plus the bonus LLM Playground. 🎉
 
 ## License
 
