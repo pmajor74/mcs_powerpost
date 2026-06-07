@@ -15,6 +15,8 @@ workbench plus a multi-provider **LLM Playground**, by
 - [The main window](#the-main-window)
 - [Response viewer — Body, Raw, Headers, Request, Find](#response-viewer)
 - [Bulk-edit params & headers](#bulk-edit-params--headers)
+- [Tests — post-response assertions](#tests--post-response-assertions)
+- [Saved response examples](#saved-response-examples)
 
 **Request bodies**
 - [JSON / Text](#json--text-body)
@@ -86,6 +88,39 @@ A **Find ▼ / ▲** box searches within any of these views (great for large res
 **What it is.** A fast way to edit many rows at once. Tick **Bulk edit** on the Params or Headers
 tab and the grid becomes a text box — one `key: value` per line; prefix a line with `//` to keep it
 but disable it. Untick to parse it back into the grid. Perfect for pasting a block of headers.
+
+## Tests — post-response assertions
+
+![Tests tab](docs/img/tests.png)
+
+**What it is.** A request's **Tests** tab holds declarative assertions that run automatically after
+each send. Each row checks one facet of the response:
+
+- **Source** — `status` (code), `time` (ms), `body` (a dotted JSON path like `data.items.0.id`),
+  `header` (by name), or `rawBody`.
+- **Op** — `equals`, `notEquals`, `contains`, `notContains`, `lessThan`, `greaterThan`, `exists`,
+  `notExists`, or `matches` (regex).
+- **Expected** — the value to compare against.
+
+Results appear in the response panel's **Tests** sub-tab as colored pass/fail, with a summary on
+the status line (e.g. *Tests: 4/5 passed*):
+
+![Test results](docs/img/tests-results.png)
+
+**How to use it.** On the **Tests** tab, add rows (e.g. *status equals 200*, *time lessThan 500*,
+*body.total greaterThan 0*, *header content-type contains json*) and **Send** — the checks run and
+report automatically.
+
+## Saved response examples
+
+![Response examples](docs/img/examples.png)
+
+**What it is.** Snapshot a response and keep it on the request as a named **example** — a reference
+of "what this endpoint returned" you can re-view without re-sending.
+
+**How to use it.** After a response comes back, click **Examples ▾** in the response bar →
+**Save response as example…** and name it. Re-open any saved example from the same menu to display
+it in the response viewer, or choose **Manage examples…** to view/delete them.
 
 ---
 

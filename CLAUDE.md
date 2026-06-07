@@ -169,6 +169,18 @@ Key design points to preserve:
   right-click menu (New/Duplicate/Rename/Close); `Duplicate-PPLlmTabCmd` deep-copies the tab model
   (settings + conversation) via a JSON round-trip + `Resolve-PPLlmTab`.
 
+- **Tests** (`Tests.ps1` + `Ui.Controls.ps1` + `Ui.Tab.ps1`): a request has `tests` (New-PPTest:
+  `source` status|time|body|header|rawBody, `op`, `path`, `value`). `Invoke-PPTests` (UI-free, in
+  `Tests.ps1`, unit-tested) evaluates them against a response — `Get-PPJsonPathValue` walks a dotted
+  JSON path for `body` tests. The request editor's **Tests** inner tab is `New-PPTestGrid` (combo
+  columns); `Invoke-PPSend` runs the tests after `Show-PPResponse` and `Show-PPTestResults` renders
+  colored PASS/FAIL into the response **Tests** sub-tab + a summary on the status line.
+
+- **Saved examples** (`Model.ps1` + `Ui.Tab.ps1` + `Ui.Tools.ps1`): a request has `examples`
+  (New-PPExample: a response snapshot). `Show-PPResponse` stashes `$Ctx.lastResp`; the response bar's
+  **Examples** button (`Build-PPExamplesMenu`) saves (`Save-PPExampleCmd`) or views (`Show-PPExample`,
+  which replays the snapshot through `Show-PPResponse`); `Show-PPExamplesDialog` manages/deletes them.
+
 - **Settings & history**: `state.followRedirects`/`proxy` feed `Invoke-PPRequest`
   (`-FollowRedirects`/`-Proxy` → `HttpClientHandler`); the **Tools** toolbar button drops a menu to
   `Show-PPSettings`/`Show-PPHistory`. Each send calls `Add-PPHistoryEntry` (`Ui.Send.ps1`) which

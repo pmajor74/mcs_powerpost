@@ -96,6 +96,47 @@ function Set-PPKvEditor {
     if ($Editor.toggle.Checked) { $Editor.bulk.Text = ConvertTo-PPKvText $Rows }
 }
 
+# --- post-response tests grid (On | Source | Path | Op | Expected) ---
+function New-PPTestGrid {
+    $g = New-Object System.Windows.Forms.DataGridView
+    $g.Dock = 'Fill'; $g.AllowUserToAddRows = $true; $g.RowHeadersVisible = $false
+    $g.AutoSizeColumnsMode = 'Fill'; $g.EditMode = 'EditOnEnter'; $g.BackgroundColor = [System.Drawing.SystemColors]::Window
+    $cOn = New-Object System.Windows.Forms.DataGridViewCheckBoxColumn; $cOn.Name = 'On'; $cOn.HeaderText = 'On'; $cOn.Width = 36; $cOn.FillWeight = 7; $cOn.AutoSizeMode = 'None'
+    $cSrc = New-Object System.Windows.Forms.DataGridViewComboBoxColumn; $cSrc.Name = 'Source'; $cSrc.HeaderText = 'Source'; $cSrc.FillWeight = 16; $cSrc.FlatStyle = 'Flat'
+    [void]$cSrc.Items.AddRange(@('status', 'time', 'body', 'header', 'rawBody'))
+    $cPath = New-Object System.Windows.Forms.DataGridViewTextBoxColumn; $cPath.Name = 'Path'; $cPath.HeaderText = 'Path / header'; $cPath.FillWeight = 26
+    $cOp = New-Object System.Windows.Forms.DataGridViewComboBoxColumn; $cOp.Name = 'Op'; $cOp.HeaderText = 'Op'; $cOp.FillWeight = 18; $cOp.FlatStyle = 'Flat'
+    [void]$cOp.Items.AddRange(@('equals', 'notEquals', 'contains', 'notContains', 'lessThan', 'greaterThan', 'exists', 'notExists', 'matches'))
+    $cVal = New-Object System.Windows.Forms.DataGridViewTextBoxColumn; $cVal.Name = 'Value'; $cVal.HeaderText = 'Expected'; $cVal.FillWeight = 25
+    [void]$g.Columns.AddRange($cOn, $cSrc, $cPath, $cOp, $cVal)
+    $g.Add_DataError({ param($s, $e) $e.ThrowException = $false })   # tolerate combo cells not yet in Items
+    return $g
+}
+
+function Set-PPTestGrid {
+    param($Grid, $Tests)
+    $Grid.Rows.Clear()
+    foreach ($t in @($Tests)) {
+        if ($null -eq $t) { continue }
+        [void]$Grid.Rows.Add([bool]$t.enabled, [string]$t.source, [string]$t.path, [string]$t.op, [string]$t.value)
+    }
+}
+
+function Get-PPTestGrid {
+    param($Grid)
+    $list = @()
+    foreach ($row in $Grid.Rows) {
+        if ($row.IsNewRow) { continue }
+        $src = [string]$row.Cells['Source'].Value
+        $op = [string]$row.Cells['Op'].Value
+        if ([string]::IsNullOrWhiteSpace($src)) { continue }
+        if ([string]::IsNullOrWhiteSpace($op)) { $op = 'equals' }
+        $en = $row.Cells['On'].Value
+        $list += (New-PPTest ([bool]$en) $src ([string]$row.Cells['Path'].Value) $op ([string]$row.Cells['Value'].Value))
+    }
+    return , $list
+}
+
 # --- multipart/form-data grid (text or file fields) ---
 
 function New-PPMultipartGrid {

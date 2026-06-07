@@ -112,10 +112,17 @@ function New-PPRequestTab {
     $pgAuth = New-Object System.Windows.Forms.TabPage; $pgAuth.Text = 'Auth'; $pgAuth.UseVisualStyleBackColor = $true
     $authBuilt = New-PPAuthPanel; $pgAuth.Controls.Add($authBuilt.panel)
 
+    $pgTests = New-Object System.Windows.Forms.TabPage; $pgTests.Text = 'Tests'; $pgTests.UseVisualStyleBackColor = $true
+    $testsGrid = New-PPTestGrid
+    $testsHint = New-Object System.Windows.Forms.Label; $testsHint.Dock = 'Top'; $testsHint.Height = 20; $testsHint.TextAlign = 'MiddleLeft'; $testsHint.ForeColor = [System.Drawing.Color]::Gray
+    $testsHint.Text = 'Assertions run after each send. Source: status/time/body(JSON path)/header/rawBody.'
+    $pgTests.Controls.Add($testsGrid); $pgTests.Controls.Add($testsHint)
+
     [void]$innerTabs.TabPages.Add($pgParams)
     [void]$innerTabs.TabPages.Add($pgHeaders)
     [void]$innerTabs.TabPages.Add($pgBody)
     [void]$innerTabs.TabPages.Add($pgAuth)
+    [void]$innerTabs.TabPages.Add($pgTests)
 
     $split.Panel1.Controls.Add($innerTabs)
     $split.Panel1.Controls.Add($topBar)
@@ -129,12 +136,13 @@ function New-PPRequestTab {
     $respBar = New-Object System.Windows.Forms.Panel; $respBar.Dock = 'Top'; $respBar.Height = 28
     $copyBtn = New-Object System.Windows.Forms.Button; $copyBtn.Text = 'Copy'; $copyBtn.Dock = 'Left'; $copyBtn.Width = 70
     $saveBtn = New-Object System.Windows.Forms.Button; $saveBtn.Text = 'Save...'; $saveBtn.Dock = 'Left'; $saveBtn.Width = 70
+    $examplesBtn = New-Object System.Windows.Forms.Button; $examplesBtn.Text = "Examples $([char]0x25BE)"; $examplesBtn.Dock = 'Left'; $examplesBtn.Width = 92
     # find-in-response (searches the active Body/Raw/Request sub-tab)
     $findNext = New-Object System.Windows.Forms.Button; $findNext.Text = "Find $([char]0x25BC)"; $findNext.Dock = 'Right'; $findNext.Width = 62
     $findPrev = New-Object System.Windows.Forms.Button; $findPrev.Text = "Find $([char]0x25B2)"; $findPrev.Dock = 'Right'; $findPrev.Width = 62
     $findBox = New-Object System.Windows.Forms.TextBox; $findBox.Dock = 'Right'; $findBox.Width = 180
     $findStatus = New-Object System.Windows.Forms.Label; $findStatus.Dock = 'Right'; $findStatus.Width = 86; $findStatus.TextAlign = 'MiddleRight'
-    $respBar.Controls.Add($saveBtn); $respBar.Controls.Add($copyBtn)
+    $respBar.Controls.Add($examplesBtn); $respBar.Controls.Add($saveBtn); $respBar.Controls.Add($copyBtn)
     $respBar.Controls.Add($findNext); $respBar.Controls.Add($findPrev); $respBar.Controls.Add($findBox); $respBar.Controls.Add($findStatus)
 
     $respTabs = New-Object System.Windows.Forms.TabControl; $respTabs.Dock = 'Fill'
@@ -146,7 +154,10 @@ function New-PPRequestTab {
     $respHeadGrid = New-PPReadGrid 'Header' 'Value'; $pgRHead.Controls.Add($respHeadGrid)
     $pgReq = New-Object System.Windows.Forms.TabPage; $pgReq.Text = 'Request'; $pgReq.UseVisualStyleBackColor = $true
     $respReqBox = New-PPMultiline $true; $pgReq.Controls.Add($respReqBox)
-    [void]$respTabs.TabPages.Add($pgRBody); [void]$respTabs.TabPages.Add($pgRRaw); [void]$respTabs.TabPages.Add($pgRHead); [void]$respTabs.TabPages.Add($pgReq)
+    $pgRTests = New-Object System.Windows.Forms.TabPage; $pgRTests.Text = 'Tests'; $pgRTests.UseVisualStyleBackColor = $true
+    $respTestsBox = New-Object System.Windows.Forms.RichTextBox; $respTestsBox.Dock = 'Fill'; $respTestsBox.ReadOnly = $true; $respTestsBox.Font = $script:PPMono; $respTestsBox.BackColor = [System.Drawing.SystemColors]::Window; $respTestsBox.HideSelection = $false
+    $pgRTests.Controls.Add($respTestsBox)
+    [void]$respTabs.TabPages.Add($pgRBody); [void]$respTabs.TabPages.Add($pgRRaw); [void]$respTabs.TabPages.Add($pgRHead); [void]$respTabs.TabPages.Add($pgReq); [void]$respTabs.TabPages.Add($pgRTests)
 
     $split.Panel2.Controls.Add($respTabs)
     $split.Panel2.Controls.Add($respBar)
@@ -163,6 +174,7 @@ function New-PPRequestTab {
     $ctx.auth = $authBuilt
     $ctx.respStatus = $respStatus; $ctx.respBodyBox = $respBodyBox; $ctx.respRawBox = $respRawBox; $ctx.respHeadGrid = $respHeadGrid; $ctx.respReqBox = $respReqBox
     $ctx.respTabs = $respTabs; $ctx.findBox = $findBox; $ctx.findStatus = $findStatus
+    $ctx.testsGrid = $testsGrid; $ctx.respTestsBox = $respTestsBox; $ctx.examplesBtn = $examplesBtn
     $ctx.split = $split
     $page.Tag = $ctx
 
@@ -193,6 +205,12 @@ function New-PPRequestTab {
     })
     $saveBtn.Tag = $ctx
     $saveBtn.Add_Click({ Save-PPResponseToFile $this.Tag })
+
+    $exMenu = New-Object System.Windows.Forms.ContextMenuStrip
+    $examplesBtn.Tag = @{ ctx = $ctx; menu = $exMenu }
+    $exMenu.Tag = $ctx
+    $exMenu.Add_Opening({ Build-PPExamplesMenu $this.Tag $this })
+    $examplesBtn.Add_Click({ $t = $this.Tag; $t.menu.Show($this, 0, $this.Height) })
 
     $findNext.Tag = $ctx; $findNext.Add_Click({ Find-PPResponseMatch $this.Tag 1 })
     $findPrev.Tag = $ctx; $findPrev.Add_Click({ Find-PPResponseMatch $this.Tag -1 })
@@ -228,6 +246,7 @@ function Set-PPControlsFromModel {
     Set-PPMultipartGrid $Ctx.multipartGrid $m.multipart
 
     Set-PPAuthRefs $Ctx.auth.refs $m.auth
+    Set-PPTestGrid $Ctx.testsGrid $m.tests
     Update-PPBodyCard $Ctx
 }
 
@@ -243,6 +262,7 @@ function Sync-PPTabToModel {
     $m.body = if ($m.bodyType -eq 'graphql') { $Ctx.gqlQuery.Text } else { $Ctx.bodyBox.Text }
     $m.form = Get-PPKvGrid $Ctx.formGrid
     $m.multipart = Get-PPMultipartGrid $Ctx.multipartGrid
+    $m.tests = Get-PPTestGrid $Ctx.testsGrid
     Sync-PPAuthToModel $Ctx
     $Ctx.page.Text = $m.name
 }
@@ -264,4 +284,61 @@ function Update-PPBodyCard {
     elseif ($type -eq 'form') { $Ctx.formGrid.BringToFront() }
     elseif ($type -eq 'multipart') { $Ctx.multipartGrid.BringToFront() }
     elseif ($type -eq 'graphql') { $Ctx.gqlPanel.BringToFront() }
+}
+
+# ---- saved response examples ----
+
+# (Re)build the Examples drop-down menu for a tab's response bar.
+function Build-PPExamplesMenu {
+    param($Ctx, $Menu)
+    $Menu.Items.Clear()
+    $save = $Menu.Items.Add('Save response as example...')
+    $save.Tag = $Ctx
+    $save.Enabled = ($null -ne $Ctx.lastResp -and $Ctx.lastResp.ok)
+    $save.Add_Click({ Save-PPExampleCmd $this.Tag })
+    $exs = @($Ctx.model.examples)
+    if ($exs.Count -gt 0) {
+        [void]$Menu.Items.Add('-')
+        foreach ($e in $exs) {
+            $it = $Menu.Items.Add("$($e.name)    ($($e.statusCode))")
+            $it.Tag = @{ ctx = $Ctx; ex = $e }
+            $it.Add_Click({ Show-PPExample $this.Tag.ctx $this.Tag.ex })
+        }
+        [void]$Menu.Items.Add('-')
+        $mng = $Menu.Items.Add('Manage examples...')
+        $mng.Tag = $Ctx
+        $mng.Add_Click({ Show-PPExamplesDialog $this.Tag })
+    }
+}
+
+# Snapshot the last shown response onto the request as a named example.
+function Save-PPExampleCmd {
+    param($Ctx)
+    if ($null -eq $Ctx.lastResp -or -not $Ctx.lastResp.ok) {
+        $Ctx.respStatus.Text = 'Send a request first, then save its response as an example.'; return
+    }
+    $r = $Ctx.lastResp
+    $default = "Example $((@($Ctx.model.examples).Count) + 1)"
+    $name = [Microsoft.VisualBasic.Interaction]::InputBox('Example name:', 'Save response example', $default)
+    if ([string]::IsNullOrWhiteSpace($name)) { return }
+    $ex = New-PPExample
+    $ex.name = $name.Trim(); $ex.method = [string]$Ctx.model.method; $ex.url = [string]$Ctx.urlBox.Text
+    $ex.statusCode = [int]$r.statusCode; $ex.reason = [string]$r.reason; $ex.contentType = [string]$r.contentType
+    $ex.elapsedMs = [int]$r.elapsedMs; $ex.sizeBytes = [int]$r.sizeBytes; $ex.body = [string]$r.body
+    $hdrs = @(); foreach ($h in @($r.headers)) { $hdrs += (New-PPKv $true ([string]$h.key) ([string]$h.value)) }
+    $ex.headers = $hdrs
+    $Ctx.model.examples = @($Ctx.model.examples) + @($ex)
+    $Ctx.respStatus.Text = "Saved example '$($ex.name)'."
+}
+
+# Display a saved example in the response panel (as if it had just been received).
+function Show-PPExample {
+    param($Ctx, $Example)
+    $resp = @{
+        ok = $true; statusCode = [int]$Example.statusCode; reason = [string]$Example.reason; httpVersion = ''
+        headers = @(@($Example.headers) | ForEach-Object { @{ key = [string]$_.key; value = [string]$_.value } })
+        body = [string]$Example.body; contentType = [string]$Example.contentType; sizeBytes = [int]$Example.sizeBytes; elapsedMs = [int]$Example.elapsedMs
+    }
+    Show-PPResponse $Ctx $resp
+    $Ctx.respStatus.Text = "Example '$($Example.name)':    $($Ctx.respStatus.Text)"
 }

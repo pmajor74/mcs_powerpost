@@ -62,7 +62,7 @@ if (-not $SelfTest) {
 }
 
 # Load the library (order: leaf dependencies first).
-$libFiles = @('Model.ps1', 'Json.ps1', 'State.ps1', 'Http.ps1', 'Auth.ps1', 'Vars.ps1', 'Curl.ps1', 'Llm.ps1', 'Import.ps1')
+$libFiles = @('Model.ps1', 'Json.ps1', 'State.ps1', 'Http.ps1', 'Auth.ps1', 'Vars.ps1', 'Curl.ps1', 'Llm.ps1', 'Import.ps1', 'Tests.ps1')
 if (-not $SelfTest) { $libFiles += @('Ui.Controls.ps1', 'Ui.Env.ps1', 'Ui.Collections.ps1', 'Ui.Code.ps1', 'Ui.Llm.ps1', 'Ui.Tools.ps1', 'Ui.Tab.ps1', 'Ui.Send.ps1', 'Ui.Main.ps1') }
 foreach ($f in $libFiles) { . (Join-Path $PSScriptRoot "lib\$f") }
 
@@ -93,6 +93,9 @@ function Invoke-PPSelfTest {
         $s.tabs[0].bodyType = 'multipart'
         $s.tabs[0].multipart = @( (New-PPMultipartRow $true 'avatar' 'file' 'C:\pics\me.png'), (New-PPMultipartRow $true 'note' 'text' 'hi') )
         $s.tabs[1].bodyType = 'graphql'; $s.tabs[1].body = '{ me { id } }'; $s.tabs[1].graphqlVars = '{"x":1}'
+        $s.tabs[1].tests = @( (New-PPTest $true 'status' '' 'equals' '200'), (New-PPTest $false 'body' 'data.id' 'exists' '') )
+        $exRt = New-PPExample; $exRt.name = 'OK sample'; $exRt.method = 'GET'; $exRt.statusCode = 200; $exRt.body = '{"a":1}'; $exRt.headers = @( (New-PPKv $true 'content-type' 'application/json') )
+        $s.tabs[1].examples = @($exRt)
         $lt = New-PPLlmTab 'OCR chat'
         $lt.provider = 'Vertex AI'; $lt.model = 'gemini-2.5-pro'; $lt.system = 'be terse'; $lt.thinking = 'High'
         $lt.attachments = @('C:\pending\p.png')
@@ -113,6 +116,8 @@ function Invoke-PPSelfTest {
         Check 'collection auth round-trip' (($loaded.collections[0].auth.type -eq 'bearer') -and ($loaded.collections[0].auth.bearerToken -eq 'COL-TOKEN') -and ($loaded.collections[0].requests[0].auth.type -eq 'inherit')) "cAuth=$($loaded.collections[0].auth.type)"
         Check 'multipart round-trip' (($loaded.tabs[0].bodyType -eq 'multipart') -and ($loaded.tabs[0].multipart.Count -eq 2) -and ($loaded.tabs[0].multipart[0].kind -eq 'file') -and ($loaded.tabs[0].multipart[0].value -eq 'C:\pics\me.png')) "mp=$($loaded.tabs[0].multipart.Count)"
         Check 'graphql round-trip' (($loaded.tabs[1].bodyType -eq 'graphql') -and ($loaded.tabs[1].body -eq '{ me { id } }') -and ($loaded.tabs[1].graphqlVars -eq '{"x":1}')) "bt=$($loaded.tabs[1].bodyType)"
+        Check 'tests round-trip' (($loaded.tabs[1].tests.Count -eq 2) -and ($loaded.tabs[1].tests[0].source -eq 'status') -and ($loaded.tabs[1].tests[0].value -eq '200') -and (-not $loaded.tabs[1].tests[1].enabled) -and ($loaded.tabs[1].tests[1].path -eq 'data.id')) "tests=$($loaded.tabs[1].tests.Count)"
+        Check 'examples round-trip' (($loaded.tabs[1].examples.Count -eq 1) -and ($loaded.tabs[1].examples[0].name -eq 'OK sample') -and ($loaded.tabs[1].examples[0].statusCode -eq 200) -and ($loaded.tabs[1].examples[0].headers[0].key -eq 'content-type')) "ex=$($loaded.tabs[1].examples.Count)"
         Check 'llm tab round-trip' (($loaded.llm.tabs.Count -eq 1) -and ($loaded.llm.tabs[0].name -eq 'OCR chat') -and ($loaded.llm.tabs[0].model -eq 'gemini-2.5-pro') -and ($loaded.llm.tabs[0].conversation.Count -eq 2) -and ($loaded.llm.tabs[0].conversation[0].images[0] -eq 'C:\x\a.png')) "tabs=$($loaded.llm.tabs.Count) conv=$($loaded.llm.tabs[0].conversation.Count)"
         Check 'llm tab attachments+thinking' (($loaded.llm.tabs[0].thinking -eq 'High') -and ($loaded.llm.tabs[0].attachments.Count -eq 1) -and ($loaded.llm.tabs[0].attachments[0] -eq 'C:\pending\p.png')) "think=$($loaded.llm.tabs[0].thinking) att=$($loaded.llm.tabs[0].attachments.Count)"
         Check 'settings round-trip' (($loaded.followRedirects -eq $false) -and ($loaded.proxy -eq 'http://proxy.local:8080') -and ($loaded.cookiesEnabled -eq $false)) "follow=$($loaded.followRedirects) proxy=$($loaded.proxy)"
@@ -273,6 +278,24 @@ M+Pkvxw6C6TAFQOhMf91bd/JN/OUIgh2ZjYhZhxZbIUNe1TJKdry7WM27LJ7E5SV
     Check 'kv to text' (($kvText -match 'Accept: application/json') -and ($kvText -match '//X-Debug: 1')) "text=$kvText"
     $back = ConvertFrom-PPKvText $kvText
     Check 'kv from text' ((@($back).Count -eq 3) -and ($back[0].enabled) -and (-not $back[1].enabled) -and ($back[1].key -eq 'X-Debug') -and ($back[2].value -eq 'Bearer abc')) "n=$(@($back).Count)"
+
+    # 11e. post-response tests (assertions engine) — no network
+    $jObj = '{ "data": { "items": [ { "id": 7, "name": "x" } ] }, "ok": true }' | ConvertFrom-Json
+    $jp = Get-PPJsonPathValue $jObj 'data.items.0.id'
+    Check 'json path value' ($jp.found -and ($jp.value -eq 7)) "found=$($jp.found) val=$($jp.value)"
+    Check 'json path missing' (-not (Get-PPJsonPathValue $jObj 'data.items.5.id').found) 'expected not found'
+    $tResp = @{ ok = $true; statusCode = 200; elapsedMs = 120; contentType = 'application/json'; body = '{"token":"abc","count":3,"items":[1,2,3]}'; headers = @(@{ key = 'Content-Type'; value = 'application/json; charset=utf-8' }) }
+    $tList = @(
+        (New-PPTest $true 'status' '' 'equals' '200'),
+        (New-PPTest $true 'time' '' 'lessThan' '500'),
+        (New-PPTest $true 'body' 'token' 'equals' 'abc'),
+        (New-PPTest $true 'body' 'count' 'greaterThan' '2'),
+        (New-PPTest $true 'body' 'missing' 'notExists' ''),
+        (New-PPTest $true 'header' 'content-type' 'contains' 'json'),
+        (New-PPTest $true 'status' '' 'equals' '404')
+    )
+    $tRun = Invoke-PPTests $tList $tResp
+    Check 'tests engine' (($tRun.total -eq 7) -and ($tRun.passed -eq 6) -and (-not $tRun.results[6].passed)) "passed=$($tRun.passed)/$($tRun.total)"
 
     # 11a. collection-level inherited auth
     $colA = New-PPCollection 'C'; $colA.auth.type = 'bearer'; $colA.auth.bearerToken = 'INHERITED'

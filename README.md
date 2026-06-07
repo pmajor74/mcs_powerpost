@@ -83,6 +83,11 @@ product.
 - **Response** — status code + reason, elapsed time and size; pretty-printed JSON body,
   raw body, and a response-headers grid; **find-in-response** (search box with next/prev over the
   Body/Raw/Request views); Copy and Save-to-file.
+- **Tests** — declarative post-response assertions (status, time, a JSON-body path, a header, or
+  the raw body) with operators like equals / contains / less-than / exists / matches; results show
+  pass/fail in the response panel after every send.
+- **Saved examples** — snapshot a response onto a request as a named **example** and re-view it any
+  time (response bar → **Examples ▾**).
 - **Request history** — every send is logged (method/URL/status/time); **Tools → Request history**
   lists recent sends and reopens any of them in a new tab.
 - **Cookie jar** — a shared cookie store persists `Set-Cookie` values across requests (and
@@ -308,7 +313,10 @@ Planned features to bring MCS PowerPost closer to Postman, roughly in priority o
 - ~~**GraphQL bodies**~~ — ✅ shipped: query + variables body type.
 - ~~**Collection-level auth**~~ — ✅ shipped: per-collection default auth + request **Inherit**.
 - ~~**Bulk-edit headers/params**~~ — ✅ shipped: `key: value` text toggle.
-- Later: pre-request/post-response tests, saved response examples.
+- ~~**Post-response tests**~~ — ✅ shipped: declarative assertions with pass/fail results.
+- ~~**Saved response examples**~~ — ✅ shipped: snapshot + re-view responses per request.
+
+**Every feature on the original roadmap is now shipped** — plus the bonus LLM Playground. 🎉
 
 ## License
 

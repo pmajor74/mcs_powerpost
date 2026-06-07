@@ -22,6 +22,19 @@ function New-PPMultipartRow {
     return @{ enabled = $Enabled; key = $Key; kind = $Kind; value = $Value }   # kind: text | file
 }
 
+# A post-response assertion. source: status|time|header|body|rawBody;
+# op: equals|notEquals|contains|notContains|lessThan|greaterThan|exists|notExists|matches.
+# path = JSON dotted path (body) or header name (header); value = expected.
+function New-PPTest {
+    param([bool]$Enabled = $true, [string]$Source = 'status', [string]$Path = '', [string]$Op = 'equals', [string]$Value = '')
+    return @{ enabled = $Enabled; source = $Source; path = $Path; op = $Op; value = $Value }
+}
+
+# A saved response example: a snapshot of a response kept on a request for reference.
+function New-PPExample {
+    return @{ name = ''; method = 'GET'; url = ''; statusCode = 0; reason = ''; contentType = ''; elapsedMs = 0; sizeBytes = 0; body = ''; headers = @() }
+}
+
 function New-PPAuth {
     return @{
         type            = 'none'        # none | bearer | basic | clientcreds | authcode
@@ -58,6 +71,8 @@ function New-PPTab {
         multipart = @()                 # rows for multipart/form-data (New-PPMultipartRow)
         graphqlVars = ''                # JSON variables for graphql
         auth      = (New-PPAuth)
+        tests     = @()                 # post-response assertions (New-PPTest)
+        examples  = @()                 # saved response snapshots (New-PPExample)
     }
 }
 
@@ -241,7 +256,49 @@ function Resolve-PPTab {
     $t.multipart = Resolve-PPMultipartList (Get-PPProp $Raw 'multipart' @())
     $t.graphqlVars = [string](Get-PPProp $Raw 'graphqlVars' '')
     $t.auth      = Resolve-PPAuth (Get-PPProp $Raw 'auth' $null)
+    $t.tests     = Resolve-PPTestList (Get-PPProp $Raw 'tests' @())
+    $t.examples  = Resolve-PPExampleList (Get-PPProp $Raw 'examples' @())
     return $t
+}
+
+function Resolve-PPTest {
+    param($Raw)
+    return @{
+        enabled = [bool](Get-PPProp $Raw 'enabled' $true)
+        source  = [string](Get-PPProp $Raw 'source' 'status')
+        path    = [string](Get-PPProp $Raw 'path' '')
+        op      = [string](Get-PPProp $Raw 'op' 'equals')
+        value   = [string](Get-PPProp $Raw 'value' '')
+    }
+}
+function Resolve-PPTestList {
+    param($Raw)
+    $list = @()
+    foreach ($r in @($Raw)) { if ($null -ne $r) { $list += (Resolve-PPTest $r) } }
+    return , $list
+}
+
+function Resolve-PPExample {
+    param($Raw)
+    $e = New-PPExample
+    if ($null -eq $Raw) { return $e }
+    $e.name        = [string](Get-PPProp $Raw 'name' '')
+    $e.method      = [string](Get-PPProp $Raw 'method' 'GET')
+    $e.url         = [string](Get-PPProp $Raw 'url' '')
+    $e.statusCode  = [int](Get-PPProp $Raw 'statusCode' 0)
+    $e.reason      = [string](Get-PPProp $Raw 'reason' '')
+    $e.contentType = [string](Get-PPProp $Raw 'contentType' '')
+    $e.elapsedMs   = [int](Get-PPProp $Raw 'elapsedMs' 0)
+    $e.sizeBytes   = [int](Get-PPProp $Raw 'sizeBytes' 0)
+    $e.body        = [string](Get-PPProp $Raw 'body' '')
+    $e.headers     = Resolve-PPKvList (Get-PPProp $Raw 'headers' @())
+    return $e
+}
+function Resolve-PPExampleList {
+    param($Raw)
+    $list = @()
+    foreach ($r in @($Raw)) { if ($null -ne $r) { $list += (Resolve-PPExample $r) } }
+    return , $list
 }
 
 function Resolve-PPEnvironment {

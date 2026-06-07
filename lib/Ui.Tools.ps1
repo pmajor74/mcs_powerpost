@@ -54,6 +54,45 @@ function Show-PPImportCollection {
     }
 }
 
+# Manage the saved response examples on a request (view / delete).
+function Show-PPExamplesDialog {
+    param($Ctx)
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = 'Response examples'; $dlg.FormBorderStyle = 'Sizable'; $dlg.StartPosition = 'CenterParent'
+    $dlg.MinimizeBox = $false; $dlg.MaximizeBox = $false; $dlg.ShowInTaskbar = $false
+    $dlg.ClientSize = New-Object System.Drawing.Size(700, 380); $dlg.MinimumSize = New-Object System.Drawing.Size(480, 280)
+
+    $grid = New-Object System.Windows.Forms.DataGridView
+    $grid.Dock = 'Fill'; $grid.ReadOnly = $true; $grid.AllowUserToAddRows = $false; $grid.RowHeadersVisible = $false
+    $grid.SelectionMode = 'FullRowSelect'; $grid.MultiSelect = $false; $grid.AutoSizeColumnsMode = 'Fill'; $grid.BackgroundColor = [System.Drawing.SystemColors]::Window
+    foreach ($c in @(@('Name', 26), @('Status', 12), @('Method', 12), @('URL', 50))) {
+        $col = New-Object System.Windows.Forms.DataGridViewTextBoxColumn; $col.HeaderText = $c[0]; $col.FillWeight = $c[1]; [void]$grid.Columns.Add($col)
+    }
+    $foot = New-Object System.Windows.Forms.FlowLayoutPanel
+    $foot.Dock = 'Bottom'; $foot.Height = 48; $foot.FlowDirection = 'RightToLeft'; $foot.Padding = New-Object System.Windows.Forms.Padding(8)
+    $close = New-Object System.Windows.Forms.Button; $close.Text = 'Close'; $close.Size = New-Object System.Drawing.Size(84, 28)
+    $view = New-Object System.Windows.Forms.Button; $view.Text = 'View'; $view.Size = New-Object System.Drawing.Size(84, 28)
+    $del = New-Object System.Windows.Forms.Button; $del.Text = 'Delete'; $del.Size = New-Object System.Drawing.Size(84, 28)
+    $foot.Controls.Add($close); $foot.Controls.Add($view); $foot.Controls.Add($del)
+    $dlg.Controls.Add($grid); $dlg.Controls.Add($foot); $dlg.CancelButton = $close
+
+    $fill = { $grid.Rows.Clear(); foreach ($e in @($Ctx.model.examples)) { [void]$grid.Rows.Add($e.name, [string]$e.statusCode, $e.method, $e.url) } }
+    & $fill
+    $view.Add_Click({
+        if ($grid.SelectedRows.Count -eq 0) { return }
+        $i = $grid.SelectedRows[0].Index
+        if ($i -ge 0 -and $i -lt @($Ctx.model.examples).Count) { Show-PPExample $Ctx $Ctx.model.examples[$i]; $dlg.Close() }
+    })
+    $del.Add_Click({
+        if ($grid.SelectedRows.Count -eq 0) { return }
+        $i = $grid.SelectedRows[0].Index
+        $exs = @($Ctx.model.examples)
+        if ($i -ge 0 -and $i -lt $exs.Count) { $target = $exs[$i]; $Ctx.model.examples = @($exs | Where-Object { -not [object]::ReferenceEquals($_, $target) }); & $fill }
+    })
+    $close.Add_Click({ $dlg.Close() })
+    [void]$dlg.ShowDialog($Global:PPApp.form); $dlg.Dispose()
+}
+
 function Show-PPCookies {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = 'Cookies'; $dlg.FormBorderStyle = 'Sizable'; $dlg.StartPosition = 'CenterParent'

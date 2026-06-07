@@ -109,6 +109,7 @@ function Invoke-PPSend {
             -AuthHeaders $auth.headers -BodyType $m.bodyType -Body $body -Form $formRows -Multipart $mpRows `
             -GraphQLVariables $gqlVars -TimeoutSec $timeout -FollowRedirects $follow -Proxy $proxy -CookieContainer $jar
         Show-PPResponse $Ctx $resp
+        Show-PPTestResults $Ctx (Invoke-PPTests $m.tests $resp)
         Add-PPHistoryEntry $m $resp $url
     } finally {
         $form.Cursor = $oldCursor
@@ -135,6 +136,7 @@ function Add-PPHistoryEntry {
 
 function Show-PPResponse {
     param($Ctx, $Resp)
+    $Ctx.lastResp = $Resp    # kept so "Save as example" can snapshot it
     if (-not $Resp.ok) {
         $Ctx.respStatus.ForeColor = [System.Drawing.Color]::DarkRed
         $Ctx.respStatus.Text = "Request failed  ($($Resp.elapsedMs) ms)"
@@ -162,6 +164,23 @@ function Show-PPResponse {
     foreach ($h in @($Resp.headers)) {
         [void]$Ctx.respHeadGrid.Rows.Add([string]$h.key, [string]$h.value)
     }
+}
+
+# Render post-response assertion results into the response panel's Tests sub-tab.
+function Show-PPTestResults {
+    param($Ctx, $Run)
+    $box = $Ctx.respTestsBox
+    if (-not $box) { return }
+    $box.Clear()
+    if ($Run.total -eq 0) { $box.AppendText('No tests defined. Add assertions on the request''s Tests tab.'); return }
+    $green = [System.Drawing.Color]::FromArgb(0, 128, 0); $red = [System.Drawing.Color]::FromArgb(192, 0, 0)
+    foreach ($r in $Run.results) {
+        if ($r.passed) { $box.SelectionColor = $green; $box.AppendText("PASS  $($r.name)`r`n") }
+        else { $box.SelectionColor = $red; $box.AppendText("FAIL  $($r.name)   (actual: $($r.actual))`r`n") }
+    }
+    $box.Select(0, 0)
+    $sum = "Tests: $($Run.passed)/$($Run.total) passed"
+    $Ctx.respStatus.Text = "$($Ctx.respStatus.Text)        $sum"
 }
 
 function Invoke-PPGetToken {
