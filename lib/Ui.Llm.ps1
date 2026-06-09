@@ -265,7 +265,7 @@ function New-PPLlmTabPage {
 
     # system (multiline)
     $sysPanel = New-Object System.Windows.Forms.Panel; $sysPanel.Dock = 'Top'; $sysPanel.Height = 56
-    $systemBox = New-Object System.Windows.Forms.TextBox; $systemBox.Dock = 'Fill'; $systemBox.Multiline = $true; $systemBox.ScrollBars = 'Vertical'; $systemBox.AcceptsReturn = $true
+    $systemBox = New-Object System.Windows.Forms.TextBox; $systemBox.Dock = 'Fill'; $systemBox.Multiline = $true; $systemBox.ScrollBars = 'Vertical'; $systemBox.AcceptsReturn = $true; $systemBox.MaxLength = 0
     $sysLbl = New-Object System.Windows.Forms.Label; $sysLbl.Text = 'System:'; $sysLbl.Dock = 'Left'; $sysLbl.Width = 56; $sysLbl.TextAlign = 'TopLeft'; $sysLbl.Padding = New-Object System.Windows.Forms.Padding(0, 4, 0, 0)
     $sysPanel.Controls.Add($systemBox); $sysPanel.Controls.Add($sysLbl)
 
@@ -284,7 +284,7 @@ function New-PPLlmTabPage {
     $attachLabel = New-Object System.Windows.Forms.Label; $attachLabel.Dock = 'Fill'; $attachLabel.TextAlign = 'MiddleLeft'; $attachLabel.Text = 'No images attached.'; $attachLabel.AutoEllipsis = $true
     $attachRow.Controls.Add($attachLabel); $attachRow.Controls.Add($btnClearAttach); $attachRow.Controls.Add($btnAttach)
     $inputArea = New-Object System.Windows.Forms.Panel; $inputArea.Dock = 'Fill'
-    $input = New-Object System.Windows.Forms.TextBox; $input.Multiline = $true; $input.Dock = 'Fill'; $input.ScrollBars = 'Vertical'; $input.Font = New-Object System.Drawing.Font('Segoe UI', 10)
+    $input = New-Object System.Windows.Forms.TextBox; $input.Multiline = $true; $input.Dock = 'Fill'; $input.ScrollBars = 'Vertical'; $input.Font = New-Object System.Drawing.Font('Segoe UI', 10); $input.MaxLength = 0
     $sendBtn = New-Object System.Windows.Forms.Button; $sendBtn.Text = 'Send'; $sendBtn.Dock = 'Right'; $sendBtn.Width = 90
     $sendBtn.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215); $sendBtn.ForeColor = [System.Drawing.Color]::White
     $inputArea.Controls.Add($input); $inputArea.Controls.Add($sendBtn)
@@ -399,7 +399,7 @@ function Show-PPLlmProviders {
     $lbl.Text = 'Providers (JSON). Keys/secrets are stored locally in powerpost.state.json.'
     $lbl.Dock = 'Top'; $lbl.Height = 24; $lbl.Padding = New-Object System.Windows.Forms.Padding(4, 5, 4, 0)
     $box = New-Object System.Windows.Forms.TextBox
-    $box.Multiline = $true; $box.Dock = 'Fill'; $box.ScrollBars = 'Both'; $box.WordWrap = $false
+    $box.Multiline = $true; $box.Dock = 'Fill'; $box.ScrollBars = 'Both'; $box.WordWrap = $false; $box.MaxLength = 0
     $box.AcceptsReturn = $true; $box.AcceptsTab = $true; $box.Font = New-Object System.Drawing.Font('Consolas', 9.5)
     $box.Text = ($Global:PPApp.state.llm.providers | ConvertTo-Json -Depth 10)
 

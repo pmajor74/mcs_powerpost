@@ -21,6 +21,7 @@ function New-PPMultiline {
     $tb = New-Object System.Windows.Forms.TextBox
     $tb.Multiline = $true; $tb.Dock = 'Fill'; $tb.ScrollBars = 'Both'
     $tb.WordWrap = $false; $tb.AcceptsTab = $true; $tb.Font = $script:PPMono
+    $tb.MaxLength = 0            # 0 = no limit; default 32767 silently truncates long payloads/responses
     $tb.ReadOnly = $ReadOnly
     $tb.HideSelection = $false   # keep search highlight visible when focus leaves the box
     return $tb

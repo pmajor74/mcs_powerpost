@@ -15,7 +15,7 @@ function Show-PPImportCurl {
     $lbl.Padding = New-Object System.Windows.Forms.Padding(4, 5, 4, 0)
 
     $box = New-Object System.Windows.Forms.TextBox
-    $box.Multiline = $true; $box.Dock = 'Fill'; $box.ScrollBars = 'Both'
+    $box.Multiline = $true; $box.Dock = 'Fill'; $box.ScrollBars = 'Both'; $box.MaxLength = 0
     $box.WordWrap = $false; $box.AcceptsReturn = $true; $box.Font = New-Object System.Drawing.Font('Consolas', 9.5)
 
     # FlowLayoutPanel (right-to-left) places the buttons reliably at the bottom-right

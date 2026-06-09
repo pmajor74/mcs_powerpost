@@ -5,7 +5,7 @@
 ![Platform](https://img.shields.io/badge/platform-Windows-blue)
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1-5391FE)
 ![UI](https://img.shields.io/badge/UI-WinForms-512BD4)
-![License](https://img.shields.io/badge/license-proprietary-lightgrey)
+![License](https://img.shields.io/badge/license-MIT-green)
 
 **MCS PowerPost** is a tabbed API tester written in Windows PowerShell 5.1 + WinForms. It's a
 single folder of scripts — nothing to install, no dependencies to restore — just a GUI for
@@ -297,8 +297,14 @@ lib\Ui.Main.ps1      main window, toolbar, tab management, save/close, About
 
 ## License
 
-Proprietary — Copyright © Major Computing Systems. No `LICENSE` file is included yet; add one
-to set explicit usage terms.
+Licensed under the [MIT License](LICENSE) — © 2026 Major Computing Systems. You're free to use,
+modify, and distribute it; just keep the copyright and license notice in copies.
+
+**Attribution:** if you use MCS PowerPost inside an organization or business, please credit
+**Major Computing Systems** ([majorcomputingsystems.ca](https://majorcomputingsystems.ca)) — for
+example in internal docs, a tooling page, or an about/credits screen. Retaining the notice is
+*required* when you redistribute or bundle the software under MIT; for purely internal use it's a
+kindly-requested courtesy.
 
 ## About
 
