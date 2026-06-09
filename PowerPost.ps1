@@ -18,11 +18,22 @@
 #>
 param([switch]$SelfTest)
 
-# WinForms needs STA. Relaunch ourselves under -STA if we aren't already (GUI mode only).
-if (-not $SelfTest -and [System.Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') {
-    Start-Process -FilePath 'powershell.exe' `
-        -ArgumentList @('-STA', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"")
-    return
+# WinForms needs STA, AND it must own its runspace. Relaunch as a dedicated console
+# powershell.exe (GUI mode only) when either is false:
+#   * not STA — WinForms requires it;
+#   * hosted inside an editor (VS Code's PowerShell Integrated Console, ISE, ...) whose
+#     $Host.Name isn't 'ConsoleHost'. That runspace can be stopped/restarted out from under
+#     the still-running message loop, after which every WinForms event handler throws an
+#     uncatchable PipelineStoppedException (the JIT "pipeline has been stopped" dialog on
+#     close, with no way to shut the window). A separate process keeps its own runspace.
+if (-not $SelfTest) {
+    $ppIsSta   = [System.Threading.Thread]::CurrentThread.GetApartmentState() -eq 'STA'
+    $ppOwnHost = $Host.Name -eq 'ConsoleHost'
+    if (-not $ppIsSta -or -not $ppOwnHost) {
+        Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden `
+            -ArgumentList @('-STA', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"")
+        return
+    }
 }
 
 $ErrorActionPreference = 'Stop'
@@ -59,6 +70,33 @@ if (-not $SelfTest) {
     Add-Type -AssemblyName System.Drawing
     Add-Type -AssemblyName Microsoft.VisualBasic
     [System.Windows.Forms.Application]::EnableVisualStyles()
+
+    # Safety net: if the host runspace is ever torn down while the WinForms message loop is
+    # still alive (e.g. the parent console is stopped), event-handler scriptblocks throw an
+    # uncatchable PipelineStoppedException. Route message-loop exceptions through a COMPILED
+    # handler (no runspace required) that swallows only that teardown noise and surfaces
+    # everything else — so the raw .NET JIT-debug dialog is never shown.
+    Add-Type -ReferencedAssemblies 'System.Windows.Forms' -TypeDefinition @"
+using System;
+using System.Threading;
+using System.Windows.Forms;
+public static class PPAppGuard {
+    public static void Install() {
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        Application.ThreadException += delegate(object sender, ThreadExceptionEventArgs e) {
+            if (IsPipelineStopped(e.Exception)) return;   // benign teardown race — ignore
+            MessageBox.Show(e.Exception.ToString(), "MCS PowerPost", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        };
+    }
+    static bool IsPipelineStopped(Exception ex) {
+        for (Exception e = ex; e != null; e = e.InnerException) {
+            if (e.GetType().FullName == "System.Management.Automation.PipelineStoppedException") return true;
+        }
+        return false;
+    }
+}
+"@
+    [PPAppGuard]::Install()
 }
 
 # Load the library (order: leaf dependencies first).
