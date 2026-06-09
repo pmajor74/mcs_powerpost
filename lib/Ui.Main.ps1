@@ -244,11 +244,13 @@ function Start-PowerPost {
     [void]$menu.Items.Add('-')
     $miCurl   = $menu.Items.Add('Copy as cURL')
     $miPs     = $menu.Items.Add('Copy as PowerShell')
+    $miExport = $menu.Items.Add('Export as cURL...')
     $miRename.Add_Click({ Rename-PPTabCmd $null })
     $miDup.Add_Click({ Copy-PPTabCmd })
     $miClose.Add_Click({ Close-PPTabCmd })
     $miCurl.Add_Click({ Copy-PPAsCurlCmd })
     $miPs.Add_Click({ Copy-PPAsPowerShellCmd })
+    $miExport.Add_Click({ Export-PPAsCurlCmd })
     $tabControl.ContextMenuStrip = $menu
 
     # build tabs from state

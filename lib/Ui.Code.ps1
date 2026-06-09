@@ -72,3 +72,42 @@ function Copy-PPAsPowerShellCmd {
     if ($code) { [System.Windows.Forms.Clipboard]::SetText($code) }
     $Global:PPApp.statusLabel.Text = 'Copied request as PowerShell.'
 }
+
+# Build a filesystem-safe default file name from the tab/request name.
+function Get-PPSafeFileName {
+    param([string]$Name, [string]$Fallback = 'request')
+    if ([string]::IsNullOrWhiteSpace($Name)) { $Name = $Fallback }
+    $invalid = [System.IO.Path]::GetInvalidFileNameChars()
+    $sb = New-Object System.Text.StringBuilder
+    foreach ($ch in $Name.ToCharArray()) { if ($invalid -contains $ch) { [void]$sb.Append('_') } else { [void]$sb.Append($ch) } }
+    $s = $sb.ToString().Trim()
+    if ([string]::IsNullOrWhiteSpace($s)) { $s = $Fallback }
+    return $s
+}
+
+# Export the current tab as a cURL command saved to a .sh / .txt file.
+function Export-PPAsCurlCmd {
+    $ctx = Get-PPCurrentCtx
+    if (-not $ctx) { return }
+    Sync-PPTabToModel $ctx
+    $code = ConvertTo-PPCurl $ctx.model (Get-PPActiveVarMap)
+    if (-not $code) { return }
+
+    $dlg = New-Object System.Windows.Forms.SaveFileDialog
+    $dlg.Title = 'Export as cURL'
+    $dlg.Filter = 'Shell script (*.sh)|*.sh|Text file (*.txt)|*.txt|All files (*.*)|*.*'
+    $dlg.DefaultExt = 'sh'
+    $dlg.FileName = (Get-PPSafeFileName $ctx.model.name) + '.sh'
+    $owner = $Global:PPApp.form
+    $res = if ($owner) { $dlg.ShowDialog($owner) } else { $dlg.ShowDialog() }
+    if ($res -ne [System.Windows.Forms.DialogResult]::OK) { $dlg.Dispose(); return }
+    $path = $dlg.FileName
+    $dlg.Dispose()
+    try {
+        # newline-terminated, UTF-8 without BOM so the script runs cleanly on *nix
+        [System.IO.File]::WriteAllText($path, $code + "`n", (New-Object System.Text.UTF8Encoding($false)))
+        $Global:PPApp.statusLabel.Text = "Exported cURL to $path"
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show("Could not write the file.`n`n$($_.Exception.Message)", 'Export as cURL', 'OK', 'Warning') | Out-Null
+    }
+}
