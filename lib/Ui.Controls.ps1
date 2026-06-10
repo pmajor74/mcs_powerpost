@@ -224,14 +224,14 @@ function New-PPFieldTable {
 }
 
 function Add-PPFieldRow {
-    param($Table, [string]$LabelText, $Control)
+    param($Table, [string]$LabelText, $Control, [int]$Height = 28)
     $l = New-Object System.Windows.Forms.Label
     $l.Text = $LabelText
     $l.Dock = 'Fill'
-    $l.TextAlign = 'MiddleLeft'
+    $l.TextAlign = $(if ($Height -gt 28) { 'TopLeft' } else { 'MiddleLeft' })
     $Control.Dock = 'Fill'
     $r = $Table.RowCount
-    [void]$Table.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 28)))
+    [void]$Table.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, $Height)))
     $Table.Controls.Add($l, 0, $r)
     $Table.Controls.Add($Control, 1, $r)
     $Table.RowCount = $r + 1
@@ -255,7 +255,7 @@ function New-PPAuthPanel {
     $combo = New-Object System.Windows.Forms.ComboBox
     $combo.Dock = 'Top'
     $combo.DropDownStyle = 'DropDownList'
-    [void]$combo.Items.AddRange(@('None', 'Bearer / JWT', 'Basic', 'OAuth2 Client Credentials', 'OAuth2 Authorization Code', 'Inherit (collection)'))
+    [void]$combo.Items.AddRange(@('None', 'Bearer / JWT', 'Basic', 'OAuth2 Client Credentials', 'OAuth2 Authorization Code', 'Google Service Account (Vertex)', 'Inherit (collection)'))
 
     $cards = New-Object System.Windows.Forms.Panel
     $cards.Dock = 'Fill'
@@ -333,6 +333,25 @@ function New-PPAuthPanel {
     Add-PPFieldRow $pAc 'Status'         $refs.acStatus
     $refs.panels['authcode'] = $pAc
 
+    # Google service account (Vertex): paste the service-account email + PKCS#8 PEM private
+    # key (or load a vertex-credentials.json). PowerPost RS256-signs a JWT and exchanges it
+    # for a short-lived cloud-platform OAuth token, attached as a Bearer header.
+    $pVx = New-PPFieldTable
+    $refs.vxClientEmail = New-PPTextBox
+    $refs.vxPrivateKey = New-Object System.Windows.Forms.TextBox
+    $refs.vxPrivateKey.Multiline = $true; $refs.vxPrivateKey.ScrollBars = 'Vertical'
+    $refs.vxPrivateKey.WordWrap = $false; $refs.vxPrivateKey.AcceptsReturn = $true
+    $refs.vxPrivateKey.MaxLength = 0; $refs.vxPrivateKey.Font = $script:PPMono
+    $refs.vxLoadBtn = New-Object System.Windows.Forms.Button; $refs.vxLoadBtn.Text = 'Load credentials JSON...'
+    $refs.vxGetBtn = New-Object System.Windows.Forms.Button; $refs.vxGetBtn.Text = 'Get Token'
+    $refs.vxStatus = New-Object System.Windows.Forms.Label; $refs.vxStatus.AutoEllipsis = $true
+    Add-PPFieldRow $pVx 'Client Email'   $refs.vxClientEmail
+    Add-PPFieldRow $pVx 'Private Key'    $refs.vxPrivateKey 132
+    Add-PPFieldRow $pVx ''               $refs.vxLoadBtn
+    Add-PPFieldRow $pVx ''               $refs.vxGetBtn
+    Add-PPFieldRow $pVx 'Status'         $refs.vxStatus
+    $refs.panels['vertex'] = $pVx
+
     foreach ($key in $refs.panels.Keys) {
         $p = $refs.panels[$key]
         $p.Visible = $false
@@ -347,11 +366,13 @@ function New-PPAuthPanel {
 # Map between the friendly combo text and the internal auth type code.
 $script:PPAuthTypeToText = @{
     'none' = 'None'; 'bearer' = 'Bearer / JWT'; 'basic' = 'Basic'
-    'clientcreds' = 'OAuth2 Client Credentials'; 'authcode' = 'OAuth2 Authorization Code'; 'inherit' = 'Inherit (collection)'
+    'clientcreds' = 'OAuth2 Client Credentials'; 'authcode' = 'OAuth2 Authorization Code'
+    'vertex' = 'Google Service Account (Vertex)'; 'inherit' = 'Inherit (collection)'
 }
 $script:PPAuthTextToType = @{
     'None' = 'none'; 'Bearer / JWT' = 'bearer'; 'Basic' = 'basic'
-    'OAuth2 Client Credentials' = 'clientcreds'; 'OAuth2 Authorization Code' = 'authcode'; 'Inherit (collection)' = 'inherit'
+    'OAuth2 Client Credentials' = 'clientcreds'; 'OAuth2 Authorization Code' = 'authcode'
+    'Google Service Account (Vertex)' = 'vertex'; 'Inherit (collection)' = 'inherit'
 }
 
 function Show-PPAuthCard {
@@ -376,7 +397,8 @@ function Set-PPAuthRefs {
     $Refs.acAuthUrl.Text = $Auth.authUrl; $Refs.acTokenUrl.Text = $Auth.tokenUrl; $Refs.acClientId.Text = $Auth.clientId
     $Refs.acClientSecret.Text = $Auth.clientSecret; $Refs.acScope.Text = $Auth.scope
     $Refs.acPort.Text = [string]$Auth.redirectPort; $Refs.acPkce.Checked = [bool]$Auth.usePkce
-    if ($Auth.accessToken) { $Refs.ccStatus.Text = 'Cached token present.'; $Refs.acStatus.Text = 'Cached token present.' }
+    $Refs.vxClientEmail.Text = $Auth.clientEmail; $Refs.vxPrivateKey.Text = $Auth.privateKey
+    if ($Auth.accessToken) { $Refs.ccStatus.Text = 'Cached token present.'; $Refs.acStatus.Text = 'Cached token present.'; $Refs.vxStatus.Text = 'Cached token present.' }
     Show-PPAuthCard $Refs $Auth.type
 }
 
@@ -398,6 +420,9 @@ function Set-PPAuthModel {
             $Auth.clientId = $Refs.acClientId.Text; $Auth.clientSecret = $Refs.acClientSecret.Text
             $Auth.scope = $Refs.acScope.Text; $Auth.usePkce = [bool]$Refs.acPkce.Checked
             $p = 8080; [void][int]::TryParse($Refs.acPort.Text, [ref]$p); $Auth.redirectPort = $p
+        }
+        'vertex' {
+            $Auth.clientEmail = $Refs.vxClientEmail.Text.Trim(); $Auth.privateKey = $Refs.vxPrivateKey.Text
         }
     }
 }

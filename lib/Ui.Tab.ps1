@@ -198,6 +198,10 @@ function New-PPRequestTab {
     $authBuilt.refs.ccGetBtn.Add_Click({ Invoke-PPGetToken $this.Tag 'clientcreds' })
     $authBuilt.refs.acGetBtn.Tag = $ctx
     $authBuilt.refs.acGetBtn.Add_Click({ Invoke-PPGetToken $this.Tag 'authcode' })
+    $authBuilt.refs.vxGetBtn.Tag = $ctx
+    $authBuilt.refs.vxGetBtn.Add_Click({ Invoke-PPGetToken $this.Tag 'vertex' })
+    $authBuilt.refs.vxLoadBtn.Tag = $ctx
+    $authBuilt.refs.vxLoadBtn.Add_Click({ Import-PPVertexCredentials $this.Tag })
 
     $copyBtn.Tag = $ctx
     $copyBtn.Add_Click({

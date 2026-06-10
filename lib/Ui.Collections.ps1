@@ -18,8 +18,9 @@ function Build-PPTree {
             [void]$cn.Nodes.Add($rn)
         }
         [void]$tree.Nodes.Add($cn)
-        $cn.Expand()
     }
+    # Collections start collapsed; expand a node to see its saved requests.
+    $tree.CollapseAll()
     $tree.EndUpdate()
 }
 
@@ -84,8 +85,10 @@ function Show-PPCollectionAuthCmd {
 
     $built = New-PPAuthPanel
     $built.panel.Dock = 'Fill'
-    # collection auth is a template: hide the per-request OAuth "Get Token" buttons
+    # collection auth is a template: hide the per-request token buttons (Get Token / Load creds);
+    # the token is fetched at send time on the request that inherits this auth.
     $built.refs.ccGetBtn.Visible = $false; $built.refs.acGetBtn.Visible = $false
+    $built.refs.vxGetBtn.Visible = $false; $built.refs.vxLoadBtn.Visible = $false
 
     $foot = New-Object System.Windows.Forms.FlowLayoutPanel
     $foot.Dock = 'Bottom'; $foot.Height = 48; $foot.FlowDirection = 'RightToLeft'; $foot.Padding = New-Object System.Windows.Forms.Padding(8)

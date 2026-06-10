@@ -77,6 +77,11 @@ product.
     their expiry and auto-refreshed on Send.
   - **OAuth2 Authorization Code (+ PKCE)** — opens your browser to sign in, captures the
     redirect on `http://localhost:<port>/`, and exchanges the code for a token.
+  - **Google Service Account (Vertex)** — paste a service-account email + PKCS#8 PEM private key
+    (or **Load credentials JSON…** to import a `vertex-credentials.json` / gcloud key file).
+    PowerPost RS256-signs a JWT, exchanges it for a short-lived `cloud-platform` OAuth token, and
+    sends it as a Bearer header — caching/auto-refreshing like the OAuth flows. Use this to call a
+    Vertex/Gemini `:generateContent` endpoint as a normal request.
   - **Inherit (collection)** — use the parent collection's auth (set via right-click a collection →
     **Collection auth…**); resolved into the request when you open it from the collection.
 - **Response** — status code + reason, elapsed time and size; pretty-printed JSON body,
@@ -91,6 +96,9 @@ product.
   lists recent sends and reopens any of them in a new tab.
 - **Cookie jar** — a shared cookie store persists `Set-Cookie` values across requests (and
   restarts); **Tools → Cookies** lists/deletes/clears them, and **Tools → Settings** toggles it.
+- **JWT decoder** — **Tools → JWT decoder** decodes a JWT's header/payload (no signature check),
+  formats epoch claims (`iat`/`nbf`/`exp`) as UTC, explains common OIDC/Azure AD claims, and lists
+  roles/groups/scopes. Prefills from the clipboard when it holds a token.
 - **Settings** — **Tools → Settings** controls request timeout, follow-redirects, an HTTP proxy,
   and the cookie jar.
 - **Request preview** — a `Request` tab in the response panel shows the *exact* request
@@ -138,7 +146,8 @@ Tabs are your working set; **collections** are your saved library. Use the sideb
 2. With a collection (or one of its requests) selected, click **Save Request** to store a
    snapshot of the current tab into it — or right-click a collection → **Add Current Request Here**.
 3. **Double-click** a saved request to open it in a new tab. It opens as a *copy*, so editing the
-   tab doesn't change the saved request until you save again.
+   tab doesn't change the saved request until you save again. Collections start **collapsed** —
+   expand one to see its saved requests.
 4. Right-click any node to **Rename**, **Duplicate** (requests), or **Delete**.
 5. Right-click a collection → **Collection auth…** to set a default auth. Requests whose Auth is
    **Inherit (collection)** pick it up when opened from that collection.
@@ -279,7 +288,7 @@ lib\Model.ps1        data model + JSON normalization
 lib\State.ps1        load/save powerpost.state.json
 lib\Json.ps1         JSON pretty-printer
 lib\Http.ps1         request execution via HttpClient
-lib\Auth.ps1         auth headers + OAuth2 token acquisition (client-creds, auth-code+PKCE)
+lib\Auth.ps1         auth headers + token acquisition (client-creds, auth-code+PKCE, Vertex SA-JWT)
 lib\Vars.ps1         {{variable}} substitution (environments)
 lib\Curl.ps1         cURL import + cURL/PowerShell export
 lib\Import.ps1       OpenAPI/Swagger + Postman collection import
@@ -289,6 +298,7 @@ lib\Ui.Env.ps1       environment selector + manager dialog
 lib\Ui.Collections.ps1  collections sidebar (tree of saved requests) + commands
 lib\Ui.Code.ps1      cURL import dialog + copy-as-cURL/PowerShell commands
 lib\Ui.Llm.ps1       LLM Playground window + provider JSON config dialog
+lib\Ui.Jwt.ps1       JWT decoder dialog (Tools menu)
 lib\Ui.Tools.ps1     Settings dialog + Request history viewer
 lib\Ui.Tab.ps1       per-tab editor + response panel (incl. find-in-response) + model<->controls sync
 lib\Ui.Send.ps1      send, render response, fetch tokens, save response

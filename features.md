@@ -36,6 +36,7 @@ workbench plus a multi-provider **LLM Playground**, by
 **Tools**
 - [Request history](#request-history)
 - [Cookie jar](#cookie-jar)
+- [JWT decoder](#jwt-decoder)
 - [Settings](#settings)
 
 **LLM Playground**
@@ -166,10 +167,14 @@ import maps `-F` to these rows, and export emits `curl -F`.)
   token endpoint (credentials in the body or as a Basic header).
 - **OAuth2 Authorization Code (+ PKCE)** — opens your browser to sign in, captures the
   `http://localhost:<port>/` redirect, and exchanges the code for a token.
+- **Google Service Account (Vertex)** — paste a service-account email + PKCS#8 PEM private key, or
+  click **Load credentials JSON…** to import a `vertex-credentials.json` / gcloud key file.
+  PowerPost RS256-signs a JWT and exchanges it for a short-lived `cloud-platform` OAuth token — so
+  you can hit a Vertex/Gemini `:generateContent` endpoint as a normal request, no `gcloud` needed.
 - **Inherit (collection)** — use the parent [collection's auth](#collection-level-inherited-auth).
 
-**How to use it.** Pick a type, fill in the fields, and (for OAuth2) click **Get Token**; PowerPost
-caches it and attaches it to subsequent sends.
+**How to use it.** Pick a type, fill in the fields, and (for OAuth2 / Vertex) click **Get Token**;
+PowerPost caches it (with its expiry) and auto-refreshes it on subsequent sends.
 
 ## Collections
 
@@ -177,9 +182,9 @@ The left sidebar (see the [main window](#the-main-window)) is a tree of **collec
 groups of saved requests.
 
 **How to use it.** **+ Collection** makes a group; **Save Request** stores the active tab into the
-selected collection. **Double-click** a saved request to open it in a new tab (as a copy). Right-click
-any node for **Open / New Collection / Add Current Request / Rename / Duplicate / Collection auth… /
-Delete**.
+selected collection. Collections start **collapsed** — expand one to see its saved requests.
+**Double-click** a saved request to open it in a new tab (as a copy). Right-click any node for
+**Open / New Collection / Add Current Request / Rename / Duplicate / Collection auth… / Delete**.
 
 ## Collection-level (inherited) auth
 
@@ -250,6 +255,16 @@ restarts, so login/session flows just work on subsequent calls.
 
 **How to use it.** On by default. **Tools → Cookies** to view / **Delete selected** / **Clear all**;
 toggle the whole jar in [Settings](#settings).
+
+## JWT decoder
+
+**What it is.** A standalone decoder for JSON Web Tokens. It splits a token, shows the **header**
+and **payload** as an expandable tree, formats epoch claims (`iat` / `nbf` / `exp`) as UTC, explains
+common OIDC and Azure AD claims, and lists any **roles / groups / scopes** (`roles`, `wids`,
+`groups`, `scp`/`scope`). The signature is **not** verified — this is for inspection, not validation.
+
+**How to use it.** **Tools → JWT decoder**. Paste a token (it prefills from the clipboard when that
+holds one) and click **Decode**.
 
 ## Settings
 

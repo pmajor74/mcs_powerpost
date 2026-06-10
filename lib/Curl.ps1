@@ -173,6 +173,7 @@ function Get-PPAuthHeaderForExport {
         }
         'clientcreds' { if ($Auth.accessToken) { return "Authorization: Bearer $($Auth.accessToken)" } }
         'authcode'    { if ($Auth.accessToken) { return "Authorization: Bearer $($Auth.accessToken)" } }
+        'vertex'      { if ($Auth.accessToken) { return "Authorization: Bearer $($Auth.accessToken)" } }
     }
     return $null
 }

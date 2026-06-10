@@ -77,7 +77,7 @@ function Expand-PPMultipartList {
 function Expand-PPAuth {
     param($Auth, $Map)
     $a = $Auth.Clone()
-    foreach ($f in @('bearerToken', 'basicUser', 'basicPass', 'tokenUrl', 'clientId', 'clientSecret', 'scope', 'authUrl')) {
+    foreach ($f in @('bearerToken', 'basicUser', 'basicPass', 'tokenUrl', 'clientId', 'clientSecret', 'scope', 'authUrl', 'clientEmail', 'privateKey')) {
         $a[$f] = Expand-PPVars ([string]$Auth[$f]) $Map
     }
     return $a

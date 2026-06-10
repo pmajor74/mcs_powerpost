@@ -163,6 +163,15 @@ function Resolve-PPAuthHeaders {
             }
             return @{ ok = $true; headers = @(@{ key = 'Authorization'; value = "Bearer $($Auth.accessToken)" }) }
         }
+        'vertex' {
+            # Google service account: RS256-sign a JWT, exchange it for a cloud-platform token.
+            # Get-PPVertexToken (Llm.ps1) caches accessToken/tokenExpiry on $Auth, like clientcreds.
+            if (-not (Test-PPTokenValid $Auth)) {
+                $r = Get-PPVertexToken $Auth $TimeoutSec
+                if (-not $r.ok) { return @{ ok = $false; error = $r.error; headers = @() } }
+            }
+            return @{ ok = $true; headers = @(@{ key = 'Authorization'; value = "Bearer $($Auth.accessToken)" }) }
+        }
         'inherit' {
             # Resolved to the collection's auth when opened from a collection; standalone -> none.
             return @{ ok = $true; headers = @() }

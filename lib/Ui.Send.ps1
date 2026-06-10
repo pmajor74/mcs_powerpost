@@ -189,7 +189,7 @@ function Invoke-PPGetToken {
     # Fetch against variable-expanded values, but cache the token on the real model.
     $auth = Expand-PPAuth $Ctx.model.auth (Get-PPActiveVarMap)
     $r = $Ctx.auth.refs
-    $statusLabel = $(if ($Flow -eq 'authcode') { $r.acStatus } else { $r.ccStatus })
+    $statusLabel = switch ($Flow) { 'authcode' { $r.acStatus } 'vertex' { $r.vxStatus } default { $r.ccStatus } }
 
     $form = $Global:PPApp.form
     $oldCursor = $form.Cursor
@@ -202,6 +202,9 @@ function Invoke-PPGetToken {
         if ($Flow -eq 'authcode') {
             $auth.type = 'authcode'
             $result = Get-PPAuthCodeToken $auth $timeout
+        } elseif ($Flow -eq 'vertex') {
+            $auth.type = 'vertex'
+            $result = Get-PPVertexToken $auth $timeout
         } else {
             $auth.type = 'clientcreds'
             $result = Get-PPClientCredentialsToken $auth $timeout
@@ -219,6 +222,43 @@ function Invoke-PPGetToken {
     } finally {
         $form.Cursor = $oldCursor
     }
+}
+
+# Load a Google service-account credentials JSON into the Vertex auth panel. Accepts both
+# the gcloud key shape (client_email / private_key) and the VertexAI tool shape
+# (ClientEmail / PrivateKey [+ Endpoint / Model]); when Endpoint+Model are present and the
+# URL box is empty, prefill the generateContent URL.
+function Import-PPVertexCredentials {
+    param($Ctx)
+    $dlg = New-Object System.Windows.Forms.OpenFileDialog
+    $dlg.Title = 'Load service-account credentials JSON'
+    $dlg.Filter = 'JSON (*.json)|*.json|All files (*.*)|*.*'
+    if ($dlg.ShowDialog($Global:PPApp.form) -ne [System.Windows.Forms.DialogResult]::OK) { $dlg.Dispose(); return }
+    $path = $dlg.FileName; $dlg.Dispose()
+    $r = $Ctx.auth.refs
+    try {
+        $j = Get-Content -LiteralPath $path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        $r.vxStatus.ForeColor = [System.Drawing.Color]::DarkRed
+        $r.vxStatus.Text = "Could not read JSON: $($_.Exception.Message)"
+        return
+    }
+    $email = [string](Get-PPProp $j 'ClientEmail' (Get-PPProp $j 'client_email' ''))
+    $key   = [string](Get-PPProp $j 'PrivateKey'  (Get-PPProp $j 'private_key'  ''))
+    if (-not $email -and -not $key) {
+        $r.vxStatus.ForeColor = [System.Drawing.Color]::DarkRed
+        $r.vxStatus.Text = 'No client email / private key found in that file.'
+        return
+    }
+    $r.vxClientEmail.Text = $email
+    $r.vxPrivateKey.Text = $key
+    $endpoint = [string](Get-PPProp $j 'Endpoint' '')
+    $model    = [string](Get-PPProp $j 'Model' '')
+    if ($endpoint -and $model -and [string]::IsNullOrWhiteSpace($Ctx.urlBox.Text)) {
+        $Ctx.urlBox.Text = ('{0}/models/{1}:generateContent' -f $endpoint.TrimEnd('/'), $model)
+    }
+    $r.vxStatus.ForeColor = [System.Drawing.Color]::FromArgb(0, 128, 0)
+    $r.vxStatus.Text = 'Credentials loaded. Click Get Token to verify.'
 }
 
 function Save-PPResponseToFile {

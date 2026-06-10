@@ -274,11 +274,13 @@ function Start-PowerPost {
     $miSettings = $toolsMenu.Items.Add('Settings...')
     $miHistory  = $toolsMenu.Items.Add('Request history...')
     $miCookies  = $toolsMenu.Items.Add('Cookies...')
+    $miJwt      = $toolsMenu.Items.Add('JWT decoder...')
     [void]$toolsMenu.Items.Add('-')
     $miImport   = $toolsMenu.Items.Add('Import collection (OpenAPI/Postman)...')
     $miSettings.Add_Click({ Show-PPSettings })
     $miHistory.Add_Click({ Show-PPHistory })
     $miCookies.Add_Click({ Show-PPCookies })
+    $miJwt.Add_Click({ Show-PPJwtDecoder })
     $miImport.Add_Click({ Show-PPImportCollection })
     $btnTools.Add_Click({ $toolsMenu.Show($btnTools, 0, $btnTools.Height) })
     $envCombo.Add_SelectedIndexChanged({

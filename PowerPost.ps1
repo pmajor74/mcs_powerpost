@@ -101,7 +101,7 @@ public static class PPAppGuard {
 
 # Load the library (order: leaf dependencies first).
 $libFiles = @('Model.ps1', 'Json.ps1', 'State.ps1', 'Http.ps1', 'Auth.ps1', 'Vars.ps1', 'Curl.ps1', 'Llm.ps1', 'Import.ps1', 'Tests.ps1')
-if (-not $SelfTest) { $libFiles += @('Ui.Controls.ps1', 'Ui.Env.ps1', 'Ui.Collections.ps1', 'Ui.Code.ps1', 'Ui.Llm.ps1', 'Ui.Tools.ps1', 'Ui.Tab.ps1', 'Ui.Send.ps1', 'Ui.Main.ps1') }
+if (-not $SelfTest) { $libFiles += @('Ui.Controls.ps1', 'Ui.Env.ps1', 'Ui.Collections.ps1', 'Ui.Code.ps1', 'Ui.Llm.ps1', 'Ui.Jwt.ps1', 'Ui.Tools.ps1', 'Ui.Tab.ps1', 'Ui.Send.ps1', 'Ui.Main.ps1') }
 foreach ($f in $libFiles) { . (Join-Path $PSScriptRoot "lib\$f") }
 
 function Invoke-PPSelfTest {
@@ -345,6 +345,12 @@ M+Pkvxw6C6TAFQOhMf91bd/JN/OUIgh2ZjYhZhxZbIUNe1TJKdry7WM27LJ7E5SV
     Check 'own auth kept' (($eff2.type -eq 'basic') -and ($eff2.basicUser -eq 'me')) "type=$($eff2.type)"
     $inh = Resolve-PPAuthHeaders @{ type = 'inherit'; accessToken = ''; tokenExpiry = '' }
     Check 'inherit -> no headers' ($inh.ok -and (@($inh.headers).Count -eq 0)) "hdrs=$(@($inh.headers).Count)"
+
+    # 11d. Google service-account (Vertex) auth: fields survive normalize; export emits a Bearer.
+    $vx = Resolve-PPAuth ([pscustomobject]@{ type = 'vertex'; clientEmail = 'svc@p.iam.gserviceaccount.com'; privateKey = "-----BEGIN PRIVATE KEY-----`nABC`n-----END PRIVATE KEY-----"; accessToken = 'VX-TOKEN' })
+    Check 'vertex auth round-trip' (($vx.type -eq 'vertex') -and ($vx.clientEmail -eq 'svc@p.iam.gserviceaccount.com') -and ($vx.privateKey -match 'BEGIN PRIVATE KEY')) "type=$($vx.type)"
+    $vxHdr = Get-PPAuthHeaderForExport $vx @{}
+    Check 'vertex auth export bearer' ($vxHdr -eq 'Authorization: Bearer VX-TOKEN') "hdr=$vxHdr"
 
     # 11b. GraphQL body builder + cURL export
     $gqlBody = ConvertTo-PPGraphQLBody '{ user { id } }' '{"id":5}'

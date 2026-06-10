@@ -37,7 +37,7 @@ function New-PPExample {
 
 function New-PPAuth {
     return @{
-        type            = 'none'        # none | bearer | basic | clientcreds | authcode
+        type            = 'none'        # none | bearer | basic | clientcreds | authcode | vertex
         bearerToken     = ''
         basicUser       = ''
         basicPass       = ''
@@ -51,7 +51,10 @@ function New-PPAuth {
         authUrl         = ''
         redirectPort    = 8080
         usePkce         = $true
-        # cached token (both OAuth flows)
+        # Google service-account (Vertex) — RS256-signs a JWT to mint a cloud-platform token
+        clientEmail     = ''
+        privateKey      = ''            # PKCS#8 PEM ("-----BEGIN PRIVATE KEY-----")
+        # cached token (OAuth flows + vertex)
         accessToken     = ''
         tokenExpiry     = ''            # ISO-8601 UTC string, '' when none
     }
@@ -236,6 +239,8 @@ function Resolve-PPAuth {
     $a.authUrl         = [string](Get-PPProp $Raw 'authUrl' '')
     $a.redirectPort    = [int](Get-PPProp $Raw 'redirectPort' 8080)
     $a.usePkce         = [bool](Get-PPProp $Raw 'usePkce' $true)
+    $a.clientEmail     = [string](Get-PPProp $Raw 'clientEmail' '')
+    $a.privateKey      = [string](Get-PPProp $Raw 'privateKey' '')
     $a.accessToken     = [string](Get-PPProp $Raw 'accessToken' '')
     $a.tokenExpiry     = [string](Get-PPProp $Raw 'tokenExpiry' '')
     return $a
